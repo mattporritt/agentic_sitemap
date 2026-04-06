@@ -6,6 +6,7 @@ import typer
 
 from moodle_sitemap.crawl import CrawlConfig, crawl_site
 from moodle_sitemap.smoke import run_smoke_test
+from moodle_sitemap.verify import run_verification
 
 app = typer.Typer(help="Moodle-aware authenticated sitemap crawler.")
 
@@ -64,6 +65,29 @@ def smoke(
         raise typer.Exit(code=1)
 
     typer.echo(f"Smoke test wrote {result.artifact_path}")
+
+
+@app.command()
+def verify(
+    config: Path = typer.Option(..., help="Path to the TOML config file used for smoke and crawl verification."),
+    max_pages: int = typer.Option(10, min=1, help="Maximum pages to crawl during verification."),
+    output_root: Path = typer.Option(
+        Path("verification-runs"),
+        help="Root directory for timestamped verification runs.",
+    ),
+) -> None:
+    try:
+        result = run_verification(config_path=config, max_pages=max_pages, base_dir=output_root)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except RuntimeError as exc:
+        typer.echo(f"Verification failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Verification run wrote {result.smoke.artifact_path} and crawled "
+        f"{result.visited_pages} pages into {result.run_dir}"
+    )
 
 
 if __name__ == "__main__":

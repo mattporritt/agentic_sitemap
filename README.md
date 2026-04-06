@@ -15,12 +15,14 @@ This project is also intentionally AI agnostic. The core crawler does not depend
 Phase 1 currently does the following:
 
 - runs a config-driven smoke test against a Moodle login flow
+- runs a timestamped verification smoke+crawl workflow for regression checks
 - logs into a Moodle LMS with a username and password
 - crawls authenticated pages on the same origin
 - follows safe links only
 - avoids logout and obviously destructive URLs
 - avoids form submission
 - normalizes and de-duplicates visited URLs
+- stores a stable `normalized_url` per page record for canonical destination handling
 - captures page metadata, discovered links, body classes, breadcrumbs, forms, editor presence, labels, and lightweight network activity
 - captures Moodle footer performance or debug information when present
 - writes a top-level `sitemap.json` plus one JSON file per page
@@ -83,8 +85,9 @@ Recommended flow:
 1. Install the CLI and Playwright browser runtime.
 2. Prepare a Moodle site for authenticated crawling.
 3. Run the smoke test to validate login and post-login capture.
-4. Run a bounded crawl with a dedicated crawler account.
-5. Inspect the generated JSON artifacts.
+4. Run a verification smoke+crawl when you want a preserved regression snapshot.
+5. Run a bounded crawl with a dedicated crawler account.
+6. Inspect the generated JSON artifacts.
 
 ### Minimum useful test site
 
@@ -149,6 +152,34 @@ output/
 
 The smoke test is intentionally narrow. It is a reliability checkpoint before running a richer crawl.
 
+### Verification run
+
+Run a preserved verification workflow:
+
+```bash
+moodle-sitemap verify --config ./config.toml --max-pages 10
+```
+
+What this does:
+
+- runs the smoke test first
+- runs a small authenticated crawl with the same config
+- writes the results into a timestamped, git-ignored run folder
+
+Example output:
+
+```text
+verification-runs/
+  2026-04-07T101530Z/
+    smoke-test.json
+    sitemap.json
+    pages/
+      0001-my.json
+      ...
+```
+
+This is intended for regression checking over time, especially for canonical URL handling, footer parsing, and extraction behavior.
+
 ### Full crawl
 
 ```bash
@@ -179,11 +210,18 @@ output/
 
 `smoke-test.json` contains a single post-login checkpoint record with the configured site URL, browser engine, URLs before and after login, title, status when available, body metadata, breadcrumbs, timestamp, and `login_succeeded`.
 
+Each crawled page record includes:
+
+- `url`: the requested URL
+- `final_url`: the final browser URL after navigation
+- `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
+
 ## Stored data
 
 Each page record includes:
 
 - normalized URL and final URL
+- canonical `normalized_url` alongside requested and final URLs
 - page title
 - page type
 - referrer
@@ -195,6 +233,7 @@ Each page record includes:
 - forms with method, action, and field names
 - editor hints such as TinyMCE, Atto, or plain textarea presence
 - Moodle footer or debug details when present
+- raw footer text plus conservative structured parsing for current Moodle performance strings when available
 - redacted network activity observed during page load
 
 ## Design notes
@@ -219,11 +258,15 @@ This repo includes unit tests for:
 
 - config loading and browser-engine validation
 - URL normalization
+- canonical destination de-duplication
 - Moodle page classification
 - footer or debug parsing
+- body and breadcrumb normalization
+- network redaction and recorder behavior
 
 Browser end-to-end testing is intentionally minimal in this phase. Logic that would be hard to test through Playwright is isolated into small pure functions.
 
 ## Further reading
 
 - [Preparing a Moodle site for crawling](docs/moodle-site-preparation.md)
+- [Verification runs](docs/verification-runs.md)

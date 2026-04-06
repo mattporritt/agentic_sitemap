@@ -44,9 +44,7 @@ def normalize_url(url: str, *, base_url: str | None = None) -> str:
     parsed = urlparse(absolute)
     scheme = parsed.scheme.lower()
     netloc = parsed.netloc.lower()
-    path = parsed.path or "/"
-    if path != "/" and path.endswith("/"):
-        path = path.rstrip("/")
+    path = _normalize_path(parsed.path or "/")
 
     filtered_query = [
         (key, value)
@@ -56,6 +54,20 @@ def normalize_url(url: str, *, base_url: str | None = None) -> str:
     query = urlencode(sorted(filtered_query))
 
     return urlunparse((scheme, netloc, path, "", query, ""))
+
+
+def _normalize_path(path: str) -> str:
+    normalized = path or "/"
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    if normalized != "/" and normalized.endswith("/"):
+        normalized = normalized.rstrip("/")
+    return normalized
+
+
+def canonicalize_resolved_url(requested_url: str, final_url: str) -> str:
+    del requested_url
+    return normalize_url(final_url)
 
 
 def same_origin(url: str, origin: str) -> bool:

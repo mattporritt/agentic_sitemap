@@ -3,6 +3,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.DS_Store
 output/
 _smoke_test/
 config.toml
+verification-runs/

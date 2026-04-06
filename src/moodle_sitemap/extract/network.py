@@ -42,7 +42,7 @@ def redact_header_mapping(headers: dict[str, str]) -> dict[str, str]:
     return redacted
 
 
-@dataclass(slots=True)
+@dataclass
 class NetworkRecorder:
     page: Page
     events: list[NetworkEvent] = field(default_factory=list)

@@ -46,9 +46,17 @@ class LabelledElement(StrictModel):
 class FooterDebugInfo(StrictModel):
     raw_text: str | None = None
     generation_time_seconds: float | None = None
+    current_memory_mb: float | None = None
     peak_memory_mb: float | None = None
     included_files: int | None = None
     db_queries: int | None = None
+    db_reads: int | None = None
+    db_writes: int | None = None
+    db_queries_time_seconds: float | None = None
+    general_type: str | None = None
+    page_type_hint: str | None = None
+    context_summary: str | None = None
+    theme_hint: str | None = None
     debug_messages: list[str] = Field(default_factory=list)
 
 
@@ -73,6 +81,7 @@ class PageFeatures(StrictModel):
 class PageRecord(StrictModel):
     page_id: str
     url: str
+    normalized_url: str
     final_url: str
     title: str | None = None
     page_type: PageType = PageType.UNKNOWN

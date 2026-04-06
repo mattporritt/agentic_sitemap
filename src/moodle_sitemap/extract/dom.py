@@ -31,7 +31,7 @@ def extract_page_features(page: Page) -> PageFeatures:
             return cleanText(element.innerText || element.textContent || "");
           };
 
-          const body = document.body;
+          const body = document.body || document.querySelector("body");
           const forms = Array.from(document.querySelectorAll("form")).map((form) => ({
             id: form.id || null,
             method: cleanText(form.getAttribute("method")) || null,
@@ -55,12 +55,23 @@ def extract_page_features(page: Page) -> PageFeatures:
             }))
             .filter((item) => item.label);
 
-          const breadcrumbCandidates = [
-            ...document.querySelectorAll(".breadcrumb a, .breadcrumb li, nav[aria-label='breadcrumb'] a, [data-region='breadcrumb'] a")
+          const breadcrumbSelectors = [
+            ".breadcrumb li",
+            ".breadcrumb a",
+            ".breadcrumbs li",
+            ".breadcrumbs a",
+            "nav[aria-label='breadcrumb'] li",
+            "nav[aria-label='breadcrumb'] a",
+            "[data-region='breadcrumb'] li",
+            "[data-region='breadcrumb'] a",
+            ".page-context-header .breadcrumb li",
+            ".page-context-header .breadcrumb a",
+            ".secondary-navigation .breadcrumb-item",
+            ".secondary-navigation .breadcrumb-item a"
           ];
-          const breadcrumbs = breadcrumbCandidates
-            .map((item) => cleanText(item.textContent))
-            .filter(Boolean);
+          const breadcrumbs = breadcrumbSelectors.flatMap((selector) =>
+            Array.from(document.querySelectorAll(selector)).map((item) => cleanText(item.textContent))
+          );
 
           return {
             body_id: body ? body.id || null : null,
@@ -79,12 +90,40 @@ def extract_page_features(page: Page) -> PageFeatures:
         """
     )
 
+    return build_page_features_from_payload(payload)
+
+
+def build_page_features_from_payload(payload: dict) -> PageFeatures:
     return PageFeatures(
-        body_id=payload.get("body_id"),
-        body_classes=payload.get("body_classes", []),
-        breadcrumbs=payload.get("breadcrumbs", []),
+        body_id=(payload.get("body_id") or None),
+        body_classes=normalize_body_classes(payload.get("body_classes", [])),
+        breadcrumbs=normalize_breadcrumbs(payload.get("breadcrumbs", [])),
         forms=payload.get("forms", []),
         editors=EditorSummary(**payload.get("editors", {})),
         links=[LabelledElement(**item) for item in payload.get("links", [])],
         buttons=[LabelledElement(**item) for item in payload.get("buttons", [])],
     )
+
+
+def normalize_body_classes(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for value in values:
+        cleaned = " ".join((value or "").split())
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
+
+
+def normalize_breadcrumbs(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for value in values:
+        cleaned = " ".join((value or "").split())
+        if not cleaned or cleaned in {"#", "/"} or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
