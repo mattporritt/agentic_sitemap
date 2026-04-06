@@ -69,6 +69,36 @@ pip install -e .[dev]
 playwright install chromium
 ```
 
+## Prepare a Moodle site
+
+Before your first crawl, prepare a Moodle instance that exposes representative pages, footer metrics, and useful debug information. This matters because the crawler can only classify and enrich what the site actually renders for the logged-in user.
+
+Start with the dedicated setup guide:
+
+- [Moodle site preparation guide](docs/moodle-site-preparation.md)
+
+Recommended flow:
+
+1. Install the CLI and Playwright browser runtime.
+2. Prepare a Moodle site for authenticated crawling.
+3. Run a bounded crawl with a dedicated crawler account.
+4. Inspect `sitemap.json` and the per-page JSON records.
+
+### Minimum useful test site
+
+For phase 1, a good minimum setup is:
+
+- a local, staging, QA, or disposable Moodle environment
+- debugging enabled, with developer/debug messages visible
+- performance info enabled in the footer
+- one dedicated crawler account with site admin access for broad initial coverage
+- 2 to 3 courses with sections or topics
+- common activities such as assignment, quiz, forum, page, file, and URL
+- a few enrolled users in different roles where practical
+- a standard theme such as Boost or Classic
+
+An empty Moodle site will still crawl, but it will produce a much less useful sitemap.
+
 ## Usage
 
 ```bash
@@ -139,3 +169,7 @@ This repo includes unit tests for:
 - footer or debug parsing
 
 Browser end-to-end testing is intentionally minimal in this phase. Logic that would be hard to test through Playwright is isolated into small pure functions.
+
+## Further reading
+
+- [Preparing a Moodle site for crawling](docs/moodle-site-preparation.md)
