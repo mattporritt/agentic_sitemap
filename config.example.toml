@@ -1,0 +1,10 @@
+[site]
+url = "https://example.com"
+
+[auth]
+username = "admin"
+password = "replace-me"
+
+[browser]
+engine = "chromium"
+headless = true

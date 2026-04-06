@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from urllib.parse import urljoin
 
 from typing import TYPE_CHECKING
@@ -7,10 +8,26 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Page, Response
 
 
-def login_to_moodle(page: Page, site_url: str, username: str, password: str) -> str:
+@dataclass(slots=True)
+class LoginResult:
+    final_url: str
+    response_status: int | None = None
+
+
+def login_appears_successful(page: Page) -> bool:
+    if "login" in page.url.lower() and page.locator('input[name="password"], input#password').count() > 0:
+        return False
+    if page.locator('a[data-title="logout"], a[href*="logout"]').count() > 0:
+        return True
+    if page.locator("#page, #page-wrapper, body").count() > 0:
+        return True
+    return False
+
+
+def login_to_moodle(page: Page, site_url: str, username: str, password: str) -> LoginResult:
     login_url = urljoin(site_url.rstrip("/") + "/", "login/index.php")
     page.goto(login_url, wait_until="domcontentloaded")
 
@@ -24,19 +41,30 @@ def login_to_moodle(page: Page, site_url: str, username: str, password: str) -> 
     page.locator(username_selector).first.fill(username)
     page.locator(password_selector).first.fill(password)
 
+    navigation_response: Response | None = None
     submit = page.locator(submit_selector).first
-    if submit.count():
-        submit.click()
-    else:
-        page.locator(password_selector).first.press("Enter")
+    try:
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=10_000) as navigation_info:
+            if submit.count():
+                submit.click()
+            else:
+                page.locator(password_selector).first.press("Enter")
+        navigation_response = navigation_info.value
+    except PlaywrightTimeoutError:
+        if submit.count():
+            submit.click()
+        else:
+            page.locator(password_selector).first.press("Enter")
 
     try:
         page.wait_for_load_state("networkidle", timeout=10_000)
     except PlaywrightTimeoutError:
         page.wait_for_load_state("domcontentloaded")
 
-    still_on_login = page.locator(password_selector).count() > 0 and "login" in page.url
-    if still_on_login:
+    if not login_appears_successful(page):
         raise RuntimeError("Login did not appear to complete successfully.")
 
-    return page.url
+    return LoginResult(
+        final_url=page.url,
+        response_status=navigation_response.status if navigation_response else None,
+    )

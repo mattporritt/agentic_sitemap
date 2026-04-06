@@ -20,6 +20,11 @@ class PageType(StrEnum):
     UNKNOWN = "unknown"
 
 
+class BrowserEngine(StrEnum):
+    CHROMIUM = "chromium"
+    FIREFOX = "firefox"
+
+
 class FormSummary(StrictModel):
     id: str | None = None
     method: str | None = None
@@ -87,3 +92,25 @@ class SiteManifest(StrictModel):
     max_pages: int
     visited_pages: int
     pages: list[PageRecord] = Field(default_factory=list)
+
+
+class SmokeTestConfig(StrictModel):
+    site_url: HttpUrl
+    username: str
+    password: str
+    browser_engine: BrowserEngine = BrowserEngine.CHROMIUM
+    headless: bool = True
+
+
+class SmokeTestRecord(StrictModel):
+    configured_site_url: HttpUrl
+    browser_engine: BrowserEngine
+    initial_url: str
+    final_url: str
+    page_title: str | None = None
+    http_status: int | None = None
+    body_id: str | None = None
+    body_classes: list[str] = Field(default_factory=list)
+    breadcrumbs: list[str] = Field(default_factory=list)
+    login_succeeded: bool
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

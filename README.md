@@ -14,6 +14,7 @@ This project is also intentionally AI agnostic. The core crawler does not depend
 
 Phase 1 currently does the following:
 
+- runs a config-driven smoke test against a Moodle login flow
 - logs into a Moodle LMS with a username and password
 - crawls authenticated pages on the same origin
 - follows safe links only
@@ -81,8 +82,9 @@ Recommended flow:
 
 1. Install the CLI and Playwright browser runtime.
 2. Prepare a Moodle site for authenticated crawling.
-3. Run a bounded crawl with a dedicated crawler account.
-4. Inspect `sitemap.json` and the per-page JSON records.
+3. Run the smoke test to validate login and post-login capture.
+4. Run a bounded crawl with a dedicated crawler account.
+5. Inspect the generated JSON artifacts.
 
 ### Minimum useful test site
 
@@ -101,6 +103,54 @@ An empty Moodle site will still crawl, but it will produce a much less useful si
 
 ## Usage
 
+### Smoke test
+
+Create a local config file from the example:
+
+```bash
+cp config.example.toml config.toml
+```
+
+Example config:
+
+```toml
+[site]
+url = "https://example.com"
+
+[auth]
+username = "admin"
+password = "secret"
+
+[browser]
+engine = "chromium"
+headless = true
+```
+
+Run the smoke test:
+
+```bash
+moodle-sitemap smoke --config ./config.toml
+```
+
+What this proves:
+
+- the config file is valid
+- the selected Playwright browser can launch
+- the crawler can reach the Moodle site
+- login succeeds with the supplied credentials
+- the tool can capture minimal post-login page metadata
+
+Expected output:
+
+```text
+output/
+  smoke-test.json
+```
+
+The smoke test is intentionally narrow. It is a reliability checkpoint before running a richer crawl.
+
+### Full crawl
+
 ```bash
 moodle-sitemap crawl \
   --site-url https://example.com \
@@ -117,6 +167,7 @@ Example output:
 
 ```text
 output/
+  smoke-test.json
   sitemap.json
   pages/
     0001-root.json
@@ -125,6 +176,8 @@ output/
 ```
 
 `sitemap.json` contains the site manifest and summary of all visited pages. Each page file contains the full structured record for a single visited page.
+
+`smoke-test.json` contains a single post-login checkpoint record with the configured site URL, browser engine, URLs before and after login, title, status when available, body metadata, breadcrumbs, timestamp, and `login_succeeded`.
 
 ## Stored data
 
@@ -164,6 +217,7 @@ The structure is meant to stay stable as the project grows into a broader Moodle
 
 This repo includes unit tests for:
 
+- config loading and browser-engine validation
 - URL normalization
 - Moodle page classification
 - footer or debug parsing

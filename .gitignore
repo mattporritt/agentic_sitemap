@@ -5,3 +5,4 @@ __pycache__/
 *.egg-info/
 output/
 _smoke_test/
+config.toml

@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from moodle_sitemap.crawl import CrawlConfig, crawl_site
+from moodle_sitemap.smoke import run_smoke_test
 
 app = typer.Typer(help="Moodle-aware authenticated sitemap crawler.")
 
@@ -43,6 +44,26 @@ def crawl(
         )
     )
     typer.echo(f"Crawled {manifest.visited_pages} pages into {output}")
+
+
+@app.command()
+def smoke(
+    config: Path = typer.Option(..., help="Path to the smoke test TOML config file."),
+    output: Path = typer.Option(Path("output"), help="Output directory for the smoke test artifact."),
+) -> None:
+    try:
+        result = run_smoke_test(config_path=config, output_dir=output)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except RuntimeError as exc:
+        typer.echo(f"Smoke test failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not result.record.login_succeeded:
+        typer.echo("Smoke test failed: login did not succeed.", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"Smoke test wrote {result.artifact_path}")
 
 
 if __name__ == "__main__":
