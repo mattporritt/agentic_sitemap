@@ -206,35 +206,116 @@ output/
     0003-mod-forum-view-id-14.json
 ```
 
-`sitemap.json` contains the site manifest and summary of all visited pages. Each page file contains the full structured record for a single visited page.
+`sitemap.json` contains the site manifest, a compact summary section, and page entries for all visited pages. Each page file contains the same page-record schema as the manifest entry for that page.
 
-`smoke-test.json` contains a single post-login checkpoint record with the configured site URL, browser engine, URLs before and after login, title, status when available, body metadata, breadcrumbs, timestamp, and `login_succeeded`.
+`smoke-test.json` contains a single post-login checkpoint record with `site_url`, `browser`, URLs before and after login, title, status when available, body metadata, breadcrumbs, timestamp, and `login_succeeded`.
+
+Example `smoke-test.json` shape:
+
+```json
+{
+  "site_url": "https://example.com/",
+  "browser": "chromium",
+  "initial_url": "https://example.com/",
+  "final_url": "https://example.com/my",
+  "page_title": "Dashboard | Moodle Demo",
+  "http_status": 200,
+  "body_id": "page-my-index",
+  "body_classes": ["path-my", "pagelayout-mydashboard"],
+  "breadcrumbs": [],
+  "login_succeeded": true,
+  "captured_at": "2026-04-07T10:15:30Z"
+}
+```
 
 Each crawled page record includes:
 
+- `page_id`: the stable per-run page ID used for the JSON filename
 - `url`: the requested URL
 - `final_url`: the final browser URL after navigation
 - `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
+
+### Manifest summary
+
+`sitemap.json` also includes a compact `summary` object with:
+
+- `total_pages`
+- `unknown_pages`
+- `page_type_counts`
+- `crawl_started_at`
+- `crawl_finished_at`
+
+Example `sitemap.json` summary shape:
+
+```json
+{
+  "summary": {
+    "total_pages": 10,
+    "unknown_pages": 4,
+    "page_type_counts": {
+      "dashboard": 1,
+      "course_view": 0,
+      "activity_view": 0,
+      "admin_settings": 2,
+      "user_profile": 1,
+      "gradebook": 1,
+      "unknown": 5
+    },
+    "crawl_started_at": "2026-04-07T10:15:30Z",
+    "crawl_finished_at": "2026-04-07T10:16:02Z"
+  }
+}
+```
 
 ## Stored data
 
 Each page record includes:
 
-- normalized URL and final URL
+- stable `page_id`
 - canonical `normalized_url` alongside requested and final URLs
+- final URL and requested URL
 - page title
 - page type
 - referrer
 - HTTP status when Playwright exposes it
-- discovered links
 - body id and classes
 - breadcrumbs
-- visible buttons and links
+- forms
+- editors
+- visible links
+- visible buttons
+- discovered links
 - forms with method, action, and field names
-- editor hints such as TinyMCE, Atto, or plain textarea presence
 - Moodle footer or debug details when present
 - raw footer text plus conservative structured parsing for current Moodle performance strings when available
 - redacted network activity observed during page load
+
+Example page record shape:
+
+```json
+{
+  "page_id": "0001-my",
+  "url": "https://example.com/",
+  "normalized_url": "https://example.com/my",
+  "final_url": "https://example.com/my",
+  "title": "Dashboard | Moodle Demo",
+  "page_type": "dashboard",
+  "body_id": "page-my-index",
+  "body_classes": ["path-my", "pagelayout-mydashboard"],
+  "breadcrumbs": [],
+  "forms": [],
+  "editors": {
+    "has_tinymce": false,
+    "has_atto": false,
+    "has_textarea": true
+  },
+  "links": [],
+  "buttons": [],
+  "footer": null,
+  "discovered_links": [],
+  "network": []
+}
+```
 
 ## Design notes
 

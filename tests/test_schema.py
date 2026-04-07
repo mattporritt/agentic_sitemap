@@ -1,0 +1,146 @@
+from datetime import datetime, timezone
+
+from moodle_sitemap.auth import LoginResult
+from moodle_sitemap.crawl import build_manifest_summary
+from moodle_sitemap.models import (
+    BrowserEngine,
+    EditorSummary,
+    PageFeatures,
+    PageRecord,
+    PageType,
+    SmokeTestConfig,
+)
+from moodle_sitemap.smoke import build_smoke_test_record
+
+
+def test_build_smoke_test_record_populates_known_fields() -> None:
+    config = SmokeTestConfig(
+        site_url="https://example.com",
+        username="admin",
+        password="secret",
+        browser_engine=BrowserEngine.FIREFOX,
+        headless=True,
+    )
+    features = PageFeatures(
+        body_id="page-my-index",
+        body_classes=["path-my", "theme"],
+        breadcrumbs=["Dashboard"],
+        forms=[],
+        editors=EditorSummary(),
+        links=[],
+        buttons=[],
+    )
+
+    record = build_smoke_test_record(
+        config=config,
+        login_result=LoginResult(final_url="https://example.com/my", response_status=200),
+        page_title="Dashboard | Moodle Demo",
+        features=features,
+        login_succeeded=True,
+    )
+
+    assert str(record.site_url) == "https://example.com/"
+    assert record.browser == BrowserEngine.FIREFOX
+    assert record.initial_url == "https://example.com/"
+    assert record.final_url == "https://example.com/my"
+    assert record.page_title == "Dashboard | Moodle Demo"
+    assert record.http_status == 200
+    assert record.body_id == "page-my-index"
+    assert record.body_classes == ["path-my", "theme"]
+    assert record.breadcrumbs == ["Dashboard"]
+    assert record.login_succeeded is True
+
+
+def test_page_record_serializes_flat_schema_fields() -> None:
+    page = PageRecord(
+        page_id="0001-my",
+        url="https://example.com/",
+        normalized_url="https://example.com/my",
+        final_url="https://example.com/my",
+        title="Dashboard | Moodle Demo",
+        page_type=PageType.DASHBOARD,
+        http_status=200,
+        body_id="page-my-index",
+        body_classes=["path-my", "theme"],
+        breadcrumbs=["Dashboard"],
+        forms=[],
+        editors=EditorSummary(),
+        links=[],
+        buttons=[],
+        discovered_links=[],
+        network=[],
+    )
+
+    dumped = page.model_dump()
+
+    assert dumped["page_id"] == "0001-my"
+    assert dumped["body_id"] == "page-my-index"
+    assert dumped["body_classes"] == ["path-my", "theme"]
+    assert dumped["breadcrumbs"] == ["Dashboard"]
+    assert dumped["forms"] == []
+    assert "features" not in dumped
+
+
+def test_build_manifest_summary_counts_page_types() -> None:
+    started = datetime(2026, 4, 7, 10, 15, 30, tzinfo=timezone.utc)
+    ended = datetime(2026, 4, 7, 10, 16, 0, tzinfo=timezone.utc)
+    pages = [
+        PageRecord(
+            page_id="0001-my",
+            url="https://example.com/",
+            normalized_url="https://example.com/my",
+            final_url="https://example.com/my",
+            title="Dashboard",
+            page_type=PageType.DASHBOARD,
+            body_classes=[],
+            breadcrumbs=[],
+            forms=[],
+            editors=EditorSummary(),
+            links=[],
+            buttons=[],
+            discovered_links=[],
+            network=[],
+        ),
+        PageRecord(
+            page_id="0002-admin-search",
+            url="https://example.com/admin/search.php",
+            normalized_url="https://example.com/admin/search.php",
+            final_url="https://example.com/admin/search.php",
+            title="Admin",
+            page_type=PageType.ADMIN_SETTINGS,
+            body_classes=[],
+            breadcrumbs=[],
+            forms=[],
+            editors=EditorSummary(),
+            links=[],
+            buttons=[],
+            discovered_links=[],
+            network=[],
+        ),
+        PageRecord(
+            page_id="0003-unknown",
+            url="https://example.com/message",
+            normalized_url="https://example.com/message",
+            final_url="https://example.com/message",
+            title="Message",
+            page_type=PageType.UNKNOWN,
+            body_classes=[],
+            breadcrumbs=[],
+            forms=[],
+            editors=EditorSummary(),
+            links=[],
+            buttons=[],
+            discovered_links=[],
+            network=[],
+        ),
+    ]
+
+    summary = build_manifest_summary(pages, crawl_started_at=started, crawl_finished_at=ended)
+
+    assert summary.total_pages == 3
+    assert summary.unknown_pages == 1
+    assert summary.page_type_counts["dashboard"] == 1
+    assert summary.page_type_counts["admin_settings"] == 1
+    assert summary.page_type_counts["unknown"] == 1
+    assert summary.crawl_started_at == started
+    assert summary.crawl_finished_at == ended

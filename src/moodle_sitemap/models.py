@@ -87,19 +87,35 @@ class PageRecord(StrictModel):
     page_type: PageType = PageType.UNKNOWN
     referrer: str | None = None
     http_status: int | None = None
-    features: PageFeatures
+    body_id: str | None = None
+    body_classes: list[str] = Field(default_factory=list)
+    breadcrumbs: list[str] = Field(default_factory=list)
+    forms: list[FormSummary] = Field(default_factory=list)
+    editors: EditorSummary = Field(default_factory=EditorSummary)
+    links: list[LabelledElement] = Field(default_factory=list)
+    buttons: list[LabelledElement] = Field(default_factory=list)
     footer: FooterDebugInfo | None = None
     discovered_links: list[str] = Field(default_factory=list)
     network: list[NetworkEvent] = Field(default_factory=list)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ManifestSummary(StrictModel):
+    total_pages: int
+    unknown_pages: int
+    page_type_counts: dict[str, int] = Field(default_factory=dict)
+    crawl_started_at: datetime
+    crawl_finished_at: datetime
+
+
 class SiteManifest(StrictModel):
     site_url: HttpUrl
     origin: str
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    crawl_started_at: datetime
+    crawl_finished_at: datetime
     max_pages: int
     visited_pages: int
+    summary: ManifestSummary
     pages: list[PageRecord] = Field(default_factory=list)
 
 
@@ -112,8 +128,8 @@ class SmokeTestConfig(StrictModel):
 
 
 class SmokeTestRecord(StrictModel):
-    configured_site_url: HttpUrl
-    browser_engine: BrowserEngine
+    site_url: HttpUrl
+    browser: BrowserEngine
     initial_url: str
     final_url: str
     page_title: str | None = None

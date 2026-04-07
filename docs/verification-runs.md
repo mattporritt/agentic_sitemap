@@ -31,6 +31,8 @@ Verification runs are meant to catch regressions in:
 
 - login behavior
 - canonical URL handling and de-duplication
+- smoke artifact completeness
+- manifest summary shape and counts
 - footer parsing
 - basic Moodle extraction signals such as body classes and breadcrumbs
 - lightweight network capture

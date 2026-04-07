@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from moodle_sitemap.auth import login_appears_successful, login_to_moodle
+from moodle_sitemap.auth import LoginResult, login_appears_successful, login_to_moodle
 from moodle_sitemap.browser import open_browser
 from moodle_sitemap.config import load_smoke_config
 from moodle_sitemap.extract.dom import extract_page_features
-from moodle_sitemap.models import SmokeTestConfig, SmokeTestRecord
+from moodle_sitemap.models import PageFeatures, SmokeTestConfig, SmokeTestRecord
 
 
 @dataclass(slots=True)
@@ -32,19 +32,36 @@ def run_smoke_test(*, config_path: str | Path, output_dir: str | Path = "output"
             password=config.password,
         )
         features = extract_page_features(session.page)
-        record = SmokeTestRecord(
-            configured_site_url=config.site_url,
-            browser_engine=config.browser_engine,
-            initial_url=initial_url,
-            final_url=login_result.final_url,
+        record = build_smoke_test_record(
+            config=config,
+            login_result=login_result,
             page_title=session.page.title(),
-            http_status=login_result.response_status,
-            body_id=features.body_id,
-            body_classes=features.body_classes,
-            breadcrumbs=features.breadcrumbs,
+            features=features,
             login_succeeded=login_appears_successful(session.page),
         )
 
     artifact_path = output_path / "smoke-test.json"
     artifact_path.write_text(record.model_dump_json(indent=2), encoding="utf-8")
     return SmokeRunResult(config=config, artifact_path=artifact_path, record=record)
+
+
+def build_smoke_test_record(
+    *,
+    config: SmokeTestConfig,
+    login_result: LoginResult,
+    page_title: str | None,
+    features: PageFeatures,
+    login_succeeded: bool,
+) -> SmokeTestRecord:
+    return SmokeTestRecord(
+        site_url=config.site_url,
+        browser=config.browser_engine,
+        initial_url=str(config.site_url),
+        final_url=login_result.final_url,
+        page_title=page_title,
+        http_status=login_result.response_status,
+        body_id=features.body_id,
+        body_classes=features.body_classes,
+        breadcrumbs=features.breadcrumbs,
+        login_succeeded=login_succeeded,
+    )

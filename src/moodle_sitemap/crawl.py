@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -20,7 +21,7 @@ from moodle_sitemap.discover import (
 from moodle_sitemap.extract.dom import extract_anchor_hrefs, extract_page_features
 from moodle_sitemap.extract.footer import extract_footer_info
 from moodle_sitemap.extract.network import NetworkRecorder
-from moodle_sitemap.models import BrowserEngine, PageRecord, SiteManifest
+from moodle_sitemap.models import BrowserEngine, ManifestSummary, PageRecord, PageType, SiteManifest
 from moodle_sitemap.storage.json_store import JsonStore
 
 
@@ -69,6 +70,7 @@ class CrawlVisitIndex:
 
 
 def crawl_site(config: CrawlConfig) -> SiteManifest:
+    crawl_started_at = datetime.now(timezone.utc)
     start_url = normalize_url(config.site_url)
     parsed_site = urlparse(start_url)
     origin = f"{parsed_site.scheme}://{parsed_site.netloc}"
@@ -130,7 +132,13 @@ def crawl_site(config: CrawlConfig) -> SiteManifest:
                     page_type=classify_page(normalized_url, features),
                     referrer=referrer,
                     http_status=response.status if response else None,
-                    features=features,
+                    body_id=features.body_id,
+                    body_classes=features.body_classes,
+                    breadcrumbs=features.breadcrumbs,
+                    forms=features.forms,
+                    editors=features.editors,
+                    links=features.links,
+                    buttons=features.buttons,
                     footer=extract_footer_info(session.page),
                     discovered_links=discovered_links,
                     network=list(recorder.events),
@@ -147,12 +155,39 @@ def crawl_site(config: CrawlConfig) -> SiteManifest:
         finally:
             recorder.detach()
 
+    crawl_finished_at = datetime.now(timezone.utc)
     manifest = SiteManifest(
         site_url=start_url,
         origin=origin,
+        crawl_started_at=crawl_started_at,
+        crawl_finished_at=crawl_finished_at,
         max_pages=config.max_pages,
         visited_pages=len(page_records),
+        summary=build_manifest_summary(
+            page_records,
+            crawl_started_at=crawl_started_at,
+            crawl_finished_at=crawl_finished_at,
+        ),
         pages=page_records,
     )
     store.write_manifest(manifest)
     return manifest
+
+
+def build_manifest_summary(
+    pages: list[PageRecord],
+    *,
+    crawl_started_at: datetime,
+    crawl_finished_at: datetime,
+) -> ManifestSummary:
+    page_type_counts = {page_type.value: 0 for page_type in PageType}
+    for page in pages:
+        page_type_counts[page.page_type.value] += 1
+
+    return ManifestSummary(
+        total_pages=len(pages),
+        unknown_pages=page_type_counts[PageType.UNKNOWN.value],
+        page_type_counts=page_type_counts,
+        crawl_started_at=crawl_started_at,
+        crawl_finished_at=crawl_finished_at,
+    )
