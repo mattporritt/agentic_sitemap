@@ -32,9 +32,17 @@ Initial page types:
 
 - `dashboard`
 - `course_view`
+- `course_edit`
 - `activity_view`
+- `activity_edit`
 - `admin_settings`
 - `user_profile`
+- `user_preferences`
+- `private_files`
+- `message_preferences`
+- `notifications`
+- `calendar`
+- `report_builder`
 - `gradebook`
 - `unknown`
 
@@ -103,6 +111,24 @@ For phase 1, a good minimum setup is:
 - a standard theme such as Boost or Classic
 
 An empty Moodle site will still crawl, but it will produce a much less useful sitemap.
+
+### Generated test content for validation
+
+For local or disposable validation environments, Moodle's test-site generator is a practical way to expose more course and activity pages:
+
+```bash
+public/admin/tool/generator/cli/maketestsite.php --size S
+```
+
+This is useful because generated content:
+
+- exposes more course and activity routes
+- improves classifier validation coverage
+- makes verification crawls more representative
+
+Treat this as a dev/test workflow, not a production recommendation. The broader site-preparation guidance is in:
+
+- [Moodle site preparation guide](docs/moodle-site-preparation.md)
 
 ## Usage
 

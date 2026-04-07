@@ -200,6 +200,12 @@ cd /path/to/moodle
 php admin/tool/generator/cli/maketestsite.php --size=S
 ```
 
+Equivalent project-local path example:
+
+```bash
+public/admin/tool/generator/cli/maketestsite.php --size S
+```
+
 This tool is explicitly for developer use, requires developer debugging mode, and should not be used on a live site. It is a good fit when you want a quickly populated Moodle instance with courses, users, and enrolments.
 
 #### 2. Use upload users for accounts and enrolment-oriented setup

@@ -41,6 +41,14 @@ def test_classify_activity_view() -> None:
     assert page_type == PageType.ACTIVITY_VIEW
 
 
+def test_classify_activity_edit() -> None:
+    page_type = classify_page(
+        "https://example.com/course/modedit.php?update=14&return=1",
+        make_features(body_classes=["page-course-modedit"]),
+    )
+    assert page_type == PageType.ACTIVITY_EDIT
+
+
 def test_classify_admin_settings() -> None:
     page_type = classify_page(
         "https://example.com/admin/settings.php?section=users",
@@ -55,6 +63,62 @@ def test_classify_user_profile() -> None:
         make_features(),
     )
     assert page_type == PageType.USER_PROFILE
+
+
+def test_classify_user_preferences() -> None:
+    page_type = classify_page(
+        "https://example.com/user/preferences.php",
+        make_features(body_classes=["path-user"]),
+    )
+    assert page_type == PageType.USER_PREFERENCES
+
+
+def test_classify_private_files() -> None:
+    page_type = classify_page(
+        "https://example.com/user/files.php",
+        make_features(body_classes=["path-user"]),
+    )
+    assert page_type == PageType.PRIVATE_FILES
+
+
+def test_classify_message_preferences() -> None:
+    page_type = classify_page(
+        "https://example.com/message/notificationpreferences.php",
+        make_features(body_classes=["path-message"]),
+    )
+    assert page_type == PageType.MESSAGE_PREFERENCES
+
+
+def test_classify_notifications() -> None:
+    page_type = classify_page(
+        "https://example.com/message/output/popup/notifications.php",
+        make_features(body_classes=["path-message"]),
+    )
+    assert page_type == PageType.NOTIFICATIONS
+
+
+def test_classify_calendar() -> None:
+    page_type = classify_page(
+        "https://example.com/calendar/view.php?view=month",
+        make_features(body_classes=["path-calendar"]),
+    )
+    assert page_type == PageType.CALENDAR
+
+
+def test_classify_report_builder() -> None:
+    page_type = classify_page(
+        "https://example.com/reportbuilder/index.php",
+        make_features(breadcrumbs=["Report builder", "Custom reports"]),
+    )
+    assert page_type == PageType.REPORT_BUILDER
+
+
+def test_classify_course_edit() -> None:
+    page_type = classify_page(
+        "https://example.com/course/edit.php?id=7",
+        make_features(body_classes=["path-course"]),
+    )
+    assert page_type == PageType.COURSE_EDIT
 
 
 def test_classify_gradebook() -> None:

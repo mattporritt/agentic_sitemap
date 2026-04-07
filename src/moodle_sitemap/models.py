@@ -13,9 +13,17 @@ class StrictModel(BaseModel):
 class PageType(StrEnum):
     DASHBOARD = "dashboard"
     COURSE_VIEW = "course_view"
+    COURSE_EDIT = "course_edit"
     ACTIVITY_VIEW = "activity_view"
+    ACTIVITY_EDIT = "activity_edit"
     ADMIN_SETTINGS = "admin_settings"
     USER_PROFILE = "user_profile"
+    USER_PREFERENCES = "user_preferences"
+    PRIVATE_FILES = "private_files"
+    MESSAGE_PREFERENCES = "message_preferences"
+    NOTIFICATIONS = "notifications"
+    CALENDAR = "calendar"
+    REPORT_BUILDER = "report_builder"
     GRADEBOOK = "gradebook"
     UNKNOWN = "unknown"
 
