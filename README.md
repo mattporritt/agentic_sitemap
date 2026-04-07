@@ -39,12 +39,15 @@ Initial page types:
 - `user_profile`
 - `user_preferences`
 - `private_files`
+- `messages`
 - `message_preferences`
 - `notifications`
 - `calendar`
 - `report_builder`
 - `gradebook`
 - `unknown`
+
+`messages` means the main Moodle messaging interface at `message/index.php`.
 
 ## Non-goals
 

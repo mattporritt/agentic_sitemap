@@ -20,6 +20,7 @@ class PageType(StrEnum):
     USER_PROFILE = "user_profile"
     USER_PREFERENCES = "user_preferences"
     PRIVATE_FILES = "private_files"
+    MESSAGES = "messages"
     MESSAGE_PREFERENCES = "message_preferences"
     NOTIFICATIONS = "notifications"
     CALENDAR = "calendar"

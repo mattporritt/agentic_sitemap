@@ -4,10 +4,12 @@ from moodle_sitemap.models import EditorSummary, PageFeatures, PageType
 
 def make_features(
     *,
+    body_id: str | None = None,
     body_classes: list[str] | None = None,
     breadcrumbs: list[str] | None = None,
 ) -> PageFeatures:
     return PageFeatures(
+        body_id=body_id,
         body_classes=body_classes or [],
         breadcrumbs=breadcrumbs or [],
         forms=[],
@@ -20,9 +22,53 @@ def make_features(
 def test_classify_dashboard() -> None:
     page_type = classify_page(
         "https://example.com/my/",
-        make_features(body_classes=["pagelayout-mydashboard"]),
+        make_features(body_id="page-my-index", body_classes=["pagelayout-mydashboard", "path-my"]),
     )
     assert page_type == PageType.DASHBOARD
+
+
+def test_message_index_does_not_false_positive_as_dashboard() -> None:
+    page_type = classify_page(
+        "https://example.com/message/index.php",
+        make_features(
+            body_id="page-message-index",
+            body_classes=["pagelayout-mydashboard", "path-message", "path-user"],
+        ),
+    )
+    assert page_type == PageType.MESSAGES
+
+
+def test_specific_body_id_and_path_outrank_dashboard_layout_signal() -> None:
+    page_type = classify_page(
+        "https://example.com/message/notificationpreferences.php",
+        make_features(
+            body_id="page-message-notificationpreferences",
+            body_classes=["pagelayout-mydashboard", "path-message"],
+        ),
+    )
+    assert page_type == PageType.MESSAGE_PREFERENCES
+
+
+def test_classify_messages_landing_page() -> None:
+    page_type = classify_page(
+        "https://example.com/message/index.php",
+        make_features(
+            body_id="page-message-index",
+            body_classes=["pagelayout-mydashboard", "path-message"],
+        ),
+    )
+    assert page_type == PageType.MESSAGES
+
+
+def test_other_message_routes_do_not_collapse_into_messages() -> None:
+    page_type = classify_page(
+        "https://example.com/message/notificationpreferences.php",
+        make_features(
+            body_id="page-message-notificationpreferences",
+            body_classes=["path-message"],
+        ),
+    )
+    assert page_type == PageType.MESSAGE_PREFERENCES
 
 
 def test_classify_course_view() -> None:

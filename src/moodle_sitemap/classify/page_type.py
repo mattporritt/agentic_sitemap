@@ -13,20 +13,23 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
     breadcrumbs = " / ".join(item.lower() for item in features.breadcrumbs)
     body_id = (features.body_id or "").lower()
 
-    if path in {"/my", "/my/"} or "pagelayout-mydashboard" in classes:
-        return PageType.DASHBOARD
-
     if path == "/calendar/view.php" or body_id == "page-calendar-view" or "calendar" in breadcrumbs:
         return PageType.CALENDAR
 
     if path == "/user/files.php" or body_id == "page-user-files":
         return PageType.PRIVATE_FILES
 
+    if path == "/message/index.php" or body_id == "page-message-index":
+        return PageType.MESSAGES
+
     if path == "/message/notificationpreferences.php" or body_id == "page-message-notificationpreferences":
         return PageType.MESSAGE_PREFERENCES
 
     if path == "/message/output/popup/notifications.php" or body_id == "page-message-output-popup-notifications":
         return PageType.NOTIFICATIONS
+
+    if _is_dashboard_page(path=path, body_id=body_id, classes=classes):
+        return PageType.DASHBOARD
 
     if path == "/user/preferences.php" or body_id == "page-user-preferences":
         return PageType.USER_PREFERENCES
@@ -59,3 +62,13 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
         return PageType.GRADEBOOK
 
     return PageType.UNKNOWN
+
+
+def _is_dashboard_page(*, path: str, body_id: str, classes: set[str]) -> bool:
+    if path in {"/my", "/my/"}:
+        return True
+    if body_id == "page-my-index":
+        return True
+    if "path-my" in classes and "pagelayout-mydashboard" in classes and not path.startswith("/message/"):
+        return True
+    return False
