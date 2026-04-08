@@ -279,6 +279,37 @@ The discovery summary is meant to highlight what a larger crawl surfaced, includ
 - slowest pages
 - remaining unknown or weakly classified pages
 
+### Role-specific validation
+
+Role-specific discovery runs are useful because Moodle navigation, visible pages, available actions, safety signals, and next-step suggestions can change materially by role.
+
+For practical validation, keep one config per role and run the same discovery budget for each profile. For local test credentials, it is convenient to keep these temporary files under `/_smoke_test` so they stay git-ignored.
+
+Example role configs:
+
+```text
+_smoke_test/
+  admin-config.toml
+  teacher-config.toml
+  student-config.toml
+```
+
+Run the same crawl settings for all three roles so the differences are easier to interpret:
+
+```bash
+moodle-sitemap discover --config ./_smoke_test/admin-config.toml --max-pages 40 --max-depth 4
+moodle-sitemap discover --config ./_smoke_test/teacher-config.toml --max-pages 40 --max-depth 4
+moodle-sitemap discover --config ./_smoke_test/student-config.toml --max-pages 40 --max-depth 4
+```
+
+This helps validate:
+
+- admin-only page visibility
+- teacher vs student differences on course and participant pages
+- reduced or safer affordances for lower-privilege roles
+- workflow and `next_steps` differences across the same site
+- where the current classifier or graph still needs role-sensitive refinement
+
 ### Full crawl
 
 ```bash
@@ -303,16 +334,17 @@ moodle-sitemap compare-runs \
 
 This writes a timestamped comparison artifact under `comparison-runs/` with:
 
-- `role-compare.json`
-- `role-compare.md`
+- role-pair-specific JSON and Markdown files such as:
+  - `role-compare-admin-vs-teacher.json`
+  - `role-compare-admin-vs-teacher.md`
 
 Example output:
 
 ```text
 comparison-runs/
   2026-04-08T150000Z/
-    role-compare.json
-    role-compare.md
+    role-compare-admin-vs-teacher.json
+    role-compare-admin-vs-teacher.md
 ```
 
 The comparison focuses on:
@@ -322,6 +354,8 @@ The comparison focuses on:
 - pages visible in one run but not the other
 - workflow edges visible in one run but not the other
 - high-signal action differences on shared pages
+- `next_steps` differences on shared pages
+- safety/risk differences on shared pages
 
 ## Output layout
 

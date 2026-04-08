@@ -1,12 +1,18 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from moodle_sitemap.compare_runs import build_run_comparison_summary
+from moodle_sitemap.compare_runs import build_run_comparison_summary, create_compare_run_dir
 from moodle_sitemap.models import (
     ActionAffordance,
     AffordanceElementType,
+    EdgeRelevance,
+    EdgeWeight,
+    LikelyIntent,
+    NextStepHint,
     PageAffordances,
     PageRecord,
+    PageRiskLevel,
+    PageSafetySummary,
     PageType,
     SiteManifest,
     WorkflowEdge,
@@ -113,9 +119,95 @@ def test_build_run_comparison_summary_reports_page_and_edge_differences(tmp_path
 
     assert summary.left_role_profile == "teacher"
     assert summary.right_role_profile == "student"
+    assert summary.shared_page_count == 1
+    assert summary.left_task_edges == 0
+    assert summary.right_task_edges == 0
     assert summary.pages_only_in_left == ["https://example.com/course/view.php?id=4"]
     assert summary.pages_only_in_right == ["https://example.com/message/index.php"]
     assert summary.edge_signatures_only_in_left == [
         "navigation:https://example.com/my->https://example.com/course/view.php?id=4"
     ]
     assert summary.affordance_differences[0]["normalized_url"] == "https://example.com/my"
+
+
+def test_build_run_comparison_summary_reports_next_step_and_safety_differences(tmp_path: Path) -> None:
+    left_page = make_page("0001-course", "https://example.com/course/view.php?id=4", page_type=PageType.COURSE_VIEW)
+    right_page = make_page("0001-course", "https://example.com/course/view.php?id=4", page_type=PageType.COURSE_VIEW)
+    left_page.next_steps = [
+        NextStepHint(
+            page_id="0002-edit",
+            target_url="https://example.com/course/edit.php?id=4",
+            edge_type=WorkflowEdgeType.EDIT,
+            edge_weight=EdgeWeight.HIGH,
+            edge_relevance=EdgeRelevance.TASK,
+            label="Edit settings",
+            likely_intent=LikelyIntent.EDIT,
+        )
+    ]
+    right_page.next_steps = [
+        NextStepHint(
+            page_id="0003-gradebook",
+            target_url="https://example.com/grade/report/overview/index.php",
+            edge_type=WorkflowEdgeType.RELATED,
+            edge_weight=EdgeWeight.MEDIUM,
+            edge_relevance=EdgeRelevance.SUPPORT,
+            label="Grades",
+            likely_intent=LikelyIntent.VIEW,
+        )
+    ]
+    left_page.safety = PageSafetySummary(
+        page_risk_level=PageRiskLevel.HIGH,
+        contains_mutating_actions=True,
+        mutating_action_count=3,
+        contains_destructive_actions=False,
+    )
+    right_page.safety = PageSafetySummary(
+        page_risk_level=PageRiskLevel.LOW,
+        contains_mutating_actions=False,
+        mutating_action_count=0,
+        contains_destructive_actions=False,
+    )
+
+    left_manifest = make_manifest("teacher", [left_page])
+    right_manifest = make_manifest("student", [right_page])
+    left_graph = WorkflowGraph(
+        role_profile="teacher",
+        total_edges=1,
+        edge_type_counts={"edit": 1},
+        edges=[
+            WorkflowEdge(
+                from_page_id="0001-course",
+                to_page_id="0002-edit",
+                target_url="https://example.com/course/edit.php?id=4",
+                edge_type=WorkflowEdgeType.EDIT,
+                edge_weight=EdgeWeight.HIGH,
+                edge_relevance=EdgeRelevance.TASK,
+            )
+        ],
+    )
+    right_graph = WorkflowGraph(role_profile="student", total_edges=0, edge_type_counts={}, edges=[])
+
+    summary = build_run_comparison_summary(
+        left_run_dir=tmp_path / "left",
+        right_run_dir=tmp_path / "right",
+        left_manifest=left_manifest,
+        right_manifest=right_manifest,
+        left_graph=left_graph,
+        right_graph=right_graph,
+    )
+
+    assert summary.left_task_edges == 1
+    assert summary.right_task_edges == 0
+    assert summary.next_step_differences[0]["next_steps_only_in_left"] == ["Edit settings"]
+    assert summary.next_step_differences[0]["next_steps_only_in_right"] == ["Grades"]
+    assert summary.safety_differences[0]["left_risk_level"] == "high"
+    assert summary.safety_differences[0]["right_risk_level"] == "low"
+
+
+def test_create_compare_run_dir_avoids_same_second_collisions(tmp_path: Path) -> None:
+    first = create_compare_run_dir(tmp_path)
+    second = create_compare_run_dir(tmp_path)
+
+    assert first.exists()
+    assert second.exists()
+    assert first != second

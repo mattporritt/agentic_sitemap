@@ -466,11 +466,16 @@ class RunComparisonSummary(StrictModel):
     right_role_profile: str
     left_total_pages: int
     right_total_pages: int
+    shared_page_count: int = 0
     left_workflow_edges: int = 0
     right_workflow_edges: int = 0
+    left_task_edges: int = 0
+    right_task_edges: int = 0
     page_type_count_deltas: dict[str, dict[str, int]] = Field(default_factory=dict)
     pages_only_in_left: list[str] = Field(default_factory=list)
     pages_only_in_right: list[str] = Field(default_factory=list)
     edge_signatures_only_in_left: list[str] = Field(default_factory=list)
     edge_signatures_only_in_right: list[str] = Field(default_factory=list)
     affordance_differences: list[dict[str, object]] = Field(default_factory=list)
+    next_step_differences: list[dict[str, object]] = Field(default_factory=list)
+    safety_differences: list[dict[str, object]] = Field(default_factory=list)
