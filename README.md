@@ -44,12 +44,17 @@ Initial page types:
 - `admin_tool_page`
 - `contact_site_support`
 - `user_profile`
+- `user_profile_edit`
 - `user_preferences`
+- `user_settings_page`
 - `private_files`
+- `content_bank_preferences`
 - `messages`
 - `message_preferences`
 - `notifications`
 - `calendar`
+- `blog_page`
+- `forum_user_page`
 - `report_builder`
 - `gradebook`
 - `unknown`
@@ -57,6 +62,7 @@ Initial page types:
 `messages` means the main Moodle messaging interface at `message/index.php`.
 `course_switch_role` means the course role-switching interface at `course/switchrole.php`.
 `contact_site_support` means the contact site support form/page at `user/contactsitesupport.php`.
+Role validation also exposed a distinct lower-privilege user/profile/preferences surface, so pages like `user/edit.php`, `user/contentbank.php`, `blog/*`, and `mod/forum/user.php` now classify explicitly instead of remaining generic `unknown`.
 The admin surface is intentionally split into a few stable route-driven subtypes rather than one broad admin bucket.
 
 ## Non-goals

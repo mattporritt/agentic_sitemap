@@ -139,6 +139,22 @@ def test_classify_user_profile() -> None:
     assert page_type == PageType.USER_PROFILE
 
 
+def test_classify_user_profile_edit() -> None:
+    page_type = classify_page(
+        "https://example.com/user/edit.php?id=103&returnto=profile",
+        make_features(body_id="page-user-edit", body_classes=["path-user"]),
+    )
+    assert page_type == PageType.USER_PROFILE_EDIT
+
+
+def test_classify_user_view_as_user_profile() -> None:
+    page_type = classify_page(
+        "https://example.com/user/view.php?course=4&id=103",
+        make_features(body_id="page-user-view", body_classes=["path-user"]),
+    )
+    assert page_type == PageType.USER_PROFILE
+
+
 def test_classify_contact_site_support() -> None:
     page_type = classify_page(
         "https://example.com/user/contactsitesupport.php",
@@ -153,6 +169,22 @@ def test_classify_user_preferences() -> None:
         make_features(body_classes=["path-user"]),
     )
     assert page_type == PageType.USER_PREFERENCES
+
+
+def test_classify_user_settings_page() -> None:
+    page_type = classify_page(
+        "https://example.com/login/change_password.php?id=1",
+        make_features(body_classes=["path-login"]),
+    )
+    assert page_type == PageType.USER_SETTINGS_PAGE
+
+
+def test_classify_content_bank_preferences() -> None:
+    page_type = classify_page(
+        "https://example.com/user/contentbank.php?id=103",
+        make_features(body_id="page-user-contentbank", body_classes=["path-user"]),
+    )
+    assert page_type == PageType.CONTENT_BANK_PREFERENCES
 
 
 def test_classify_private_files() -> None:
@@ -171,6 +203,14 @@ def test_classify_message_preferences() -> None:
     assert page_type == PageType.MESSAGE_PREFERENCES
 
 
+def test_classify_message_edit_as_message_preferences() -> None:
+    page_type = classify_page(
+        "https://example.com/message/edit.php?id=103",
+        make_features(body_id="page-message-edit", body_classes=["path-message"]),
+    )
+    assert page_type == PageType.MESSAGE_PREFERENCES
+
+
 def test_classify_notifications() -> None:
     page_type = classify_page(
         "https://example.com/message/output/popup/notifications.php",
@@ -185,6 +225,22 @@ def test_classify_calendar() -> None:
         make_features(body_classes=["path-calendar"]),
     )
     assert page_type == PageType.CALENDAR
+
+
+def test_classify_blog_page() -> None:
+    page_type = classify_page(
+        "https://example.com/blog/preferences.php",
+        make_features(body_id="page-blog-preferences"),
+    )
+    assert page_type == PageType.BLOG_PAGE
+
+
+def test_classify_forum_user_page() -> None:
+    page_type = classify_page(
+        "https://example.com/mod/forum/user.php?id=103&mode=discussions",
+        make_features(body_id="page-mod-forum-user"),
+    )
+    assert page_type == PageType.FORUM_USER_PAGE
 
 
 def test_classify_report_builder() -> None:
@@ -209,3 +265,11 @@ def test_classify_gradebook() -> None:
         make_features(),
     )
     assert page_type == PageType.GRADEBOOK
+
+
+def test_nearby_routes_do_not_overclassify() -> None:
+    page_type = classify_page(
+        "https://example.com/mod/forum/view.php?id=14",
+        make_features(body_id="page-mod-forum-view"),
+    )
+    assert page_type == PageType.ACTIVITY_VIEW

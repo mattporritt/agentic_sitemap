@@ -22,8 +22,17 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
     if path == "/user/files.php" or body_id == "page-user-files":
         return PageType.PRIVATE_FILES
 
+    if path == "/user/edit.php" or body_id == "page-user-edit":
+        return PageType.USER_PROFILE_EDIT
+
+    if path == "/user/view.php" or body_id == "page-user-view":
+        return PageType.USER_PROFILE
+
     if path == "/message/index.php" or body_id == "page-message-index":
         return PageType.MESSAGES
+
+    if path == "/message/edit.php" or body_id == "page-message-edit":
+        return PageType.MESSAGE_PREFERENCES
 
     if path == "/message/notificationpreferences.php" or body_id == "page-message-notificationpreferences":
         return PageType.MESSAGE_PREFERENCES
@@ -39,6 +48,29 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
 
     if path == "/user/preferences.php" or body_id == "page-user-preferences":
         return PageType.USER_PREFERENCES
+
+    if path in {
+        "/login/change_password.php",
+        "/report/usersessions/user.php",
+        "/user/language.php",
+        "/user/forum.php",
+        "/user/editor.php",
+    }:
+        return PageType.USER_SETTINGS_PAGE
+
+    if path == "/user/contentbank.php" or body_id == "page-user-contentbank":
+        return PageType.CONTENT_BANK_PREFERENCES
+
+    if path in {
+        "/blog/index.php",
+        "/blog/preferences.php",
+        "/blog/external_blogs.php",
+        "/blog/external_blog_edit.php",
+    } or body_id.startswith("page-blog-"):
+        return PageType.BLOG_PAGE
+
+    if path == "/mod/forum/user.php" or body_id == "page-mod-forum-user":
+        return PageType.FORUM_USER_PAGE
 
     if path == "/reportbuilder/index.php" or "report builder" in breadcrumbs or "reportbuilder" in body_id:
         return PageType.REPORT_BUILDER
