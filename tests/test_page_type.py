@@ -79,6 +79,14 @@ def test_classify_course_view() -> None:
     assert page_type == PageType.COURSE_VIEW
 
 
+def test_classify_course_switch_role() -> None:
+    page_type = classify_page(
+        "https://example.com/course/switchrole.php?id=1&switchrole=-1&returnurl=%2Fmy%2Findex.php",
+        make_features(body_classes=["path-course"], body_id="page-course-switchrole"),
+    )
+    assert page_type == PageType.COURSE_SWITCH_ROLE
+
+
 def test_classify_activity_view() -> None:
     page_type = classify_page(
         "https://example.com/mod/forum/view.php?id=14",
@@ -109,6 +117,14 @@ def test_classify_user_profile() -> None:
         make_features(),
     )
     assert page_type == PageType.USER_PROFILE
+
+
+def test_classify_contact_site_support() -> None:
+    page_type = classify_page(
+        "https://example.com/user/contactsitesupport.php",
+        make_features(body_classes=["path-user"], body_id="page-user-contactsitesupport"),
+    )
+    assert page_type == PageType.CONTACT_SITE_SUPPORT
 
 
 def test_classify_user_preferences() -> None:

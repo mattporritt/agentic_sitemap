@@ -33,9 +33,11 @@ Initial page types:
 - `dashboard`
 - `course_view`
 - `course_edit`
+- `course_switch_role`
 - `activity_view`
 - `activity_edit`
 - `admin_settings`
+- `contact_site_support`
 - `user_profile`
 - `user_preferences`
 - `private_files`
@@ -48,6 +50,8 @@ Initial page types:
 - `unknown`
 
 `messages` means the main Moodle messaging interface at `message/index.php`.
+`course_switch_role` means the course role-switching interface at `course/switchrole.php`.
+`contact_site_support` means the contact site support form/page at `user/contactsitesupport.php`.
 
 ## Non-goals
 

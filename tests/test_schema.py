@@ -141,6 +141,8 @@ def test_build_manifest_summary_counts_page_types() -> None:
     assert summary.unknown_pages == 1
     assert summary.page_type_counts["dashboard"] == 1
     assert summary.page_type_counts["admin_settings"] == 1
+    assert summary.page_type_counts["course_switch_role"] == 0
+    assert summary.page_type_counts["contact_site_support"] == 0
     assert summary.page_type_counts["messages"] == 0
     assert summary.page_type_counts["unknown"] == 1
     assert summary.page_type_counts["calendar"] == 0

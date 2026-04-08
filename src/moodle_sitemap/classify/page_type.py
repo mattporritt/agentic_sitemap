@@ -16,6 +16,9 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
     if path == "/calendar/view.php" or body_id == "page-calendar-view" or "calendar" in breadcrumbs:
         return PageType.CALENDAR
 
+    if path == "/course/switchrole.php" or body_id == "page-course-switchrole":
+        return PageType.COURSE_SWITCH_ROLE
+
     if path == "/user/files.php" or body_id == "page-user-files":
         return PageType.PRIVATE_FILES
 
@@ -30,6 +33,9 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
 
     if _is_dashboard_page(path=path, body_id=body_id, classes=classes):
         return PageType.DASHBOARD
+
+    if path == "/user/contactsitesupport.php" or body_id == "page-user-contactsitesupport":
+        return PageType.CONTACT_SITE_SUPPORT
 
     if path == "/user/preferences.php" or body_id == "page-user-preferences":
         return PageType.USER_PREFERENCES
