@@ -148,6 +148,8 @@ def build_discovery_summary(
         workflow_candidate_edge_count=load_workflow_graph_metric(run_dir, "candidate_edge_count"),
         workflow_suppressed_edge_count=load_workflow_graph_metric(run_dir, "suppressed_edge_count"),
         workflow_deduplicated_pairs=load_workflow_graph_metric(run_dir, "deduplicated_pair_count"),
+        workflow_compressed_edge_count=load_workflow_graph_metric(run_dir, "compressed_edge_count"),
+        workflow_cluster_count=load_workflow_graph_metric(run_dir, "cluster_count"),
         workflow_edge_type_counts=load_workflow_edge_type_counts(run_dir),
         workflow_edge_weight_counts=load_workflow_edge_counts(run_dir, "edge_weight_counts"),
         workflow_edge_relevance_counts=load_workflow_edge_counts(run_dir, "edge_relevance_counts"),
@@ -175,6 +177,8 @@ def build_discovery_summary(
         top_task_edge_page_types=top_task_edge_page_types(run_dir, pages),
         top_high_value_edge_page_types=top_high_value_edge_page_types(run_dir, pages),
         noisy_admin_route_families=noisy_admin_route_families(run_dir, pages),
+        top_compressed_route_families=top_compressed_route_families(run_dir),
+        pages_with_most_compression=pages_with_most_compression(run_dir, pages),
         strongest_primary_pages=strongest_primary_pages(pages),
         intent_populated_pages=sum(1 for page in pages if page.task_summary.primary_page_intent.value != "unknown"),
         materially_changed_next_steps=load_materially_changed_next_steps(run_dir),
@@ -247,6 +251,8 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
         f"- Candidate workflow edges: `{summary.workflow_candidate_edge_count}`",
         f"- Suppressed workflow edges: `{summary.workflow_suppressed_edge_count}`",
         f"- Deduplicated source-target pairs: `{summary.workflow_deduplicated_pairs}`",
+        f"- Compressed workflow edges: `{summary.workflow_compressed_edge_count}`",
+        f"- Background clusters: `{summary.workflow_cluster_count}`",
         f"- Crawl duration (seconds): `{summary.crawl_duration_seconds}`",
         f"- Max depth reached: `{summary.max_depth_reached}`",
         "",
@@ -281,6 +287,18 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
     if summary.noisy_admin_route_families:
         for item in summary.noisy_admin_route_families:
             lines.append(f"- `{item['route_family']}`: {item['low_value_edge_count']}")
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Top Compressed Route Families"])
+    if summary.top_compressed_route_families:
+        for item in summary.top_compressed_route_families:
+            lines.append(f"- `{item['family_key']}`: {item['count']}")
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Pages With Most Compression"])
+    if summary.pages_with_most_compression:
+        for item in summary.pages_with_most_compression:
+            lines.append(f"- `{item['page_id']}`: {item['compressed_edge_count']}")
     else:
         lines.append("- None")
     lines.extend(["", "## Strongest Primary Pages"])
@@ -324,6 +342,8 @@ def recommended_next_actions(summary: DiscoverySummary) -> list[str]:
         actions.append("Consider whether repeated utility pages should eventually be excluded from large discovery runs.")
     if summary.workflow_edge_relevance_counts.get("contextual", 0):
         actions.append("Review low-value contextual edges and generic route families to reduce graph noise.")
+    if summary.workflow_cluster_count:
+        actions.append("Inspect the largest background navigation clusters to decide whether more route families should be compressed.")
     if summary.page_type_counts.get("admin_category", 0) or summary.page_type_counts.get("admin_setting_page", 0):
         actions.append("Inspect whether any remaining admin subtypes are still too broad and need later decomposition.")
     return actions[:5]
@@ -361,6 +381,31 @@ def load_workflow_graph_raw(run_dir: Path) -> dict[str, object]:
     if not workflow_path.exists():
         return {}
     return json.loads(workflow_path.read_text(encoding="utf-8"))
+
+
+def top_compressed_route_families(run_dir: Path) -> list[dict[str, int | str]]:
+    raw = load_workflow_graph_raw(run_dir)
+    counts = Counter(
+        cluster.get("family_key", "unknown")
+        for cluster in raw.get("background_clusters", [])
+    )
+    return [{"family_key": family_key, "count": count} for family_key, count in counts.most_common(5)]
+
+
+def pages_with_most_compression(run_dir: Path, pages: list[PageRecord]) -> list[dict[str, int | str]]:
+    raw = load_workflow_graph_raw(run_dir)
+    counts = Counter()
+    for cluster in raw.get("background_clusters", []):
+        counts[cluster.get("source_page_id", "unknown")] += int(cluster.get("count", 0) or 0)
+    page_type_by_id = {page.page_id: page.page_type.value for page in pages}
+    return [
+        {
+            "page_id": page_id,
+            "page_type": page_type_by_id.get(page_id, "unknown"),
+            "compressed_edge_count": count,
+        }
+        for page_id, count in counts.most_common(5)
+    ]
 
 
 def top_task_edge_page_types(run_dir: Path, pages: list[PageRecord]) -> list[dict[str, int | str]]:

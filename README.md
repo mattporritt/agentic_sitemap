@@ -483,6 +483,7 @@ The important distinction is:
 - workflow edges tell you that a visible page control likely leads to another visited page
 - weighted workflow edges help you focus on likely task progression instead of every navigational hop
 - weaker fallback edges are suppressed when a stronger explicit path already exists between the same two pages
+- repetitive weak admin or calendar navigation can be compressed into background clusters instead of staying as many first-class edges
 
 ### Affordance importance and likely intent
 
@@ -508,6 +509,26 @@ Each page record includes a `task_summary.primary_page_intent` hint. This is a c
 Typical values include `navigate`, `configure`, `edit`, `search`, `message`, `report`, `upload`, `view`, or `unknown`.
 
 This value is used to make `next_steps` cleaner and more task-aligned. It is still heuristic, not a guarantee.
+
+### Background navigation clusters
+
+When a page emits many low-value weak edges from repetitive families, the crawler can compress them into `background_navigation_clusters` instead of keeping each weak edge as a first-class graph edge.
+
+These clusters are used for things like:
+
+- repeated admin navigation spill
+- repeated `/admin/tool` or `/admin/settings.php` background links
+- repeated calendar query variants
+
+Each cluster is explicit and inspectable. It summarizes:
+
+- the source page
+- the compressed family key
+- how many weak edges were grouped
+- representative targets
+- the shared low-value relevance and reason
+
+This is meant to preserve awareness of background navigation while keeping the main graph focused on stronger task and support paths.
 
 ### Affordance safety hints
 

@@ -107,12 +107,26 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
                 "candidate_edge_count": 3,
                 "suppressed_edge_count": 1,
                 "deduplicated_pair_count": 1,
+                "compressed_edge_count": 2,
+                "cluster_count": 1,
                 "edge_weight_counts": {"high": 1, "medium": 0, "low": 1},
                 "edge_relevance_counts": {"task": 1, "support": 0, "navigation": 0, "contextual": 1},
                 "pre_dedup_edge_weight_counts": {"high": 1, "medium": 1, "low": 1},
                 "pre_dedup_edge_relevance_counts": {"task": 1, "support": 1, "navigation": 0, "contextual": 1},
                 "next_step_changed_pages": [
                     {"page_id": "0002-course-view", "before_targets": ["https://example.com/custom/page.php?foo=1"], "after_targets": ["https://example.com/course/view.php?id=4"]}
+                ],
+                "background_clusters": [
+                    {
+                        "cluster_type": "generic_admin_navigation_cluster",
+                        "source_page_id": "0002-course-view",
+                        "family_key": "/admin/tool",
+                        "count": 2,
+                        "representative_targets": ["https://example.com/admin/tool/foo/index.php"],
+                        "edge_relevance": "contextual",
+                        "edge_weight": "low",
+                        "reason_hint": "compressed-admin-background-navigation",
+                    }
                 ],
                 "edges": [
                     {"from_page_id": "0002-course-view", "edge_relevance": "task", "edge_weight": "high"},
@@ -133,6 +147,8 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert summary.workflow_candidate_edge_count == 3
     assert summary.workflow_suppressed_edge_count == 1
     assert summary.workflow_deduplicated_pairs == 1
+    assert summary.workflow_compressed_edge_count == 2
+    assert summary.workflow_cluster_count == 1
     assert summary.workflow_edge_weight_counts["high"] == 1
     assert summary.workflow_edge_relevance_counts["task"] == 1
     assert summary.workflow_pre_dedup_edge_weight_counts["medium"] == 1
@@ -143,6 +159,8 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert "/course/view.php" in summary.newly_seen_route_families
     assert summary.top_task_edge_page_types[0]["page_type"] == "course_view"
     assert summary.top_high_value_edge_page_types[0]["page_type"] == "course_view"
+    assert summary.top_compressed_route_families[0]["family_key"] == "/admin/tool"
+    assert summary.pages_with_most_compression[0]["page_id"] == "0002-course-view"
     assert summary.strongest_primary_pages[0]["page_id"] == "0001-my"
     assert summary.intent_populated_pages == 0
     assert summary.materially_changed_next_steps[0]["page_id"] == "0002-course-view"

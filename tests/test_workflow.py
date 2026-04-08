@@ -332,7 +332,10 @@ def test_calendar_discovered_link_variants_are_grouped_for_same_source_page() ->
     graph = derive_workflow_graph([source, target])
 
     assert graph.candidate_edge_count == 1
-    assert graph.total_edges == 1
+    assert graph.total_edges == 0
+    assert graph.cluster_count == 1
+    assert graph.compressed_edge_count == 1
+    assert source.background_navigation_clusters[0].family_key == "/calendar/view.php"
 
 
 def test_next_steps_drop_contextual_noise_when_task_edges_exist() -> None:
@@ -367,3 +370,78 @@ def test_next_steps_drop_contextual_noise_when_task_edges_exist() -> None:
 
     assert source.next_steps[0].page_id == "0002-prefs"
     assert all(step.page_id != "0003-calendar" for step in source.next_steps)
+
+
+def test_admin_low_value_edges_are_compressed_into_background_clusters() -> None:
+    source = make_page(
+        "0001-admin-search",
+        "https://example.com/admin/search.php",
+        page_type=PageType.ADMIN_SEARCH,
+        task_summary=PageTaskSummary(primary_page_intent=LikelyIntent.SEARCH, task_relevance_score=90),
+    )
+    source.discovered_links = [
+        "https://example.com/admin/category.php?category=one",
+        "https://example.com/admin/category.php?category=two",
+        "https://example.com/admin/search.php#users",
+    ]
+    admin_category_a = make_page(
+        "0002-admin-category-a",
+        "https://example.com/admin/category.php?category=one",
+        page_type=PageType.ADMIN_CATEGORY,
+    )
+    admin_category_b = make_page(
+        "0003-admin-category-b",
+        "https://example.com/admin/category.php?category=two",
+        page_type=PageType.ADMIN_CATEGORY,
+    )
+    admin_search = make_page(
+        "0004-admin-search-self",
+        "https://example.com/admin/search.php#users",
+        page_type=PageType.ADMIN_SEARCH,
+    )
+
+    graph = derive_workflow_graph([source, admin_category_a, admin_category_b, admin_search])
+
+    assert graph.cluster_count >= 1
+    assert graph.compressed_edge_count == 2
+    assert source.background_navigation_clusters
+    assert any(cluster.family_key == "/admin/category.php" for cluster in source.background_navigation_clusters)
+    assert all(edge.target_url != "https://example.com/admin/category.php?category=one" for edge in graph.edges)
+
+
+def test_calendar_low_value_edges_are_compressed_but_task_edges_remain() -> None:
+    source = make_page(
+        "0001-dashboard",
+        "https://example.com/my",
+        page_type=PageType.DASHBOARD,
+        navigation=[
+            NavigationItem(
+                label="Course 1",
+                url="https://example.com/course/view.php?id=4",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.NAVIGATE,
+            )
+        ],
+    )
+    source.discovered_links = [
+        "https://example.com/calendar/view.php?view=month",
+        "https://example.com/calendar/view.php?time=1&view=month",
+    ]
+    course = make_page(
+        "0002-course",
+        "https://example.com/course/view.php?id=4",
+        page_type=PageType.COURSE_VIEW,
+    )
+    calendar = make_page(
+        "0003-calendar",
+        "https://example.com/calendar/view.php?view=month",
+        page_type=PageType.CALENDAR,
+    )
+
+    graph = derive_workflow_graph([source, course, calendar])
+
+    assert graph.total_edges == 1
+    assert graph.edges[0].to_page_id == "0002-course"
+    assert graph.compressed_edge_count == 1
+    assert source.background_navigation_clusters[0].family_key == "/calendar/view.php"

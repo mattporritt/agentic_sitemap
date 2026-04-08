@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from moodle_sitemap.discover import normalize_url
 from moodle_sitemap.models import (
     ActionAffordance,
+    BackgroundNavigationCluster,
     EdgeRelevance,
     EdgeWeight,
     ImportanceLevel,
@@ -46,8 +47,10 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
     before_next_steps = preview_next_steps_by_page(pages, candidate_edges)
     edges, deduplicated_pairs = deduplicate_edges(candidate_edges)
     suppressed_edge_count = max(len(candidate_edges) - len(edges), 0)
+    edges, background_clusters, compressed_edge_count = compress_low_value_edges(pages, edges)
 
     changed_pages = assign_next_steps(pages, edges, before_next_steps=before_next_steps)
+    attach_background_clusters(pages, background_clusters)
 
     edge_type_counts = {edge_type.value: 0 for edge_type in WorkflowEdgeType}
     edge_weight_counts = {edge_weight.value: 0 for edge_weight in EdgeWeight}
@@ -67,6 +70,8 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
         candidate_edge_count=len(candidate_edges),
         suppressed_edge_count=suppressed_edge_count,
         deduplicated_pair_count=deduplicated_pairs,
+        compressed_edge_count=compressed_edge_count,
+        cluster_count=len(background_clusters),
         total_edges=len(edges),
         edge_type_counts=edge_type_counts,
         edge_weight_counts=edge_weight_counts,
@@ -74,6 +79,7 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
         pre_dedup_edge_weight_counts=pre_dedup_edge_weight_counts,
         pre_dedup_edge_relevance_counts=pre_dedup_edge_relevance_counts,
         next_step_changed_pages=changed_pages,
+        background_clusters=background_clusters,
         edges=sorted(edges, key=lambda item: (item.from_page_id, item.target_url, item.edge_type.value)),
     )
 
@@ -551,3 +557,125 @@ def low_value_variant_group(url: str) -> str | None:
     if path == "/calendar/view.php":
         return "/calendar/view.php"
     return None
+
+
+def compress_low_value_edges(
+    pages: list[PageRecord],
+    edges: list[WorkflowEdge],
+) -> tuple[list[WorkflowEdge], list[BackgroundNavigationCluster], int]:
+    page_by_id = {page.page_id: page for page in pages}
+    compressed_edges: list[WorkflowEdge] = []
+    background_clusters: list[BackgroundNavigationCluster] = []
+    compressed_edge_count = 0
+    grouped: dict[tuple[str, str], list[WorkflowEdge]] = defaultdict(list)
+
+    for edge in edges:
+        family = compressible_family_for_edge(page_by_id.get(edge.from_page_id), edge)
+        if family is None:
+            compressed_edges.append(edge)
+            continue
+        grouped[(edge.from_page_id, family)].append(edge)
+
+    for (source_page_id, family_key), family_edges in grouped.items():
+        source_page = page_by_id.get(source_page_id)
+        if source_page is None:
+            compressed_edges.extend(family_edges)
+            continue
+        if not should_compress_family(source_page, family_key, family_edges):
+            compressed_edges.extend(family_edges)
+            continue
+        background_clusters.append(
+            BackgroundNavigationCluster(
+                cluster_type=cluster_type_for_family(family_key),
+                source_page_id=source_page_id,
+                family_key=family_key,
+                count=len(family_edges),
+                representative_targets=[edge.target_url for edge in family_edges[:3]],
+                edge_relevance=EdgeRelevance.CONTEXTUAL,
+                edge_weight=EdgeWeight.LOW,
+                reason_hint=reason_hint_for_family(family_key),
+            )
+        )
+        compressed_edge_count += len(family_edges)
+
+    return (
+        sorted(compressed_edges, key=lambda item: (item.from_page_id, item.target_url, item.edge_type.value)),
+        sorted(background_clusters, key=lambda item: (item.source_page_id, item.family_key)),
+        compressed_edge_count,
+    )
+
+
+def compressible_family_for_edge(source_page: PageRecord | None, edge: WorkflowEdge) -> str | None:
+    if edge.edge_weight != EdgeWeight.LOW:
+        return None
+    if edge.edge_relevance not in {EdgeRelevance.NAVIGATION, EdgeRelevance.CONTEXTUAL}:
+        return None
+    path = urlparse(edge.target_url).path
+    if path == "/calendar/view.php":
+        return "/calendar/view.php"
+    if path == "/calendar/managesubscriptions.php":
+        return "/calendar/managesubscriptions.php"
+    if path.startswith("/admin/tool/"):
+        return "/admin/tool"
+    if path == "/admin/settings.php":
+        return "/admin/settings.php"
+    if path == "/admin/category.php":
+        return "/admin/category.php"
+    if path == "/admin/index.php":
+        return "/admin/index.php"
+    if path == "/admin/search.php":
+        return "/admin/search.php"
+    if source_page and source_page.page_type in {
+        PageType.ADMIN_SEARCH,
+        PageType.ADMIN_CATEGORY,
+        PageType.ADMIN_SETTING_PAGE,
+        PageType.ADMIN_TOOL_PAGE,
+    } and path.startswith("/admin/"):
+        return "/admin/background"
+    return None
+
+
+def should_compress_family(
+    source_page: PageRecord,
+    family_key: str,
+    family_edges: list[WorkflowEdge],
+) -> bool:
+    if family_key.startswith("/calendar/"):
+        return len(family_edges) >= 1
+    if family_key.startswith("/admin/"):
+        if source_page.page_type in {
+            PageType.ADMIN_SEARCH,
+            PageType.ADMIN_CATEGORY,
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return len(family_edges) >= 1
+        return len(family_edges) >= 2
+    return len(family_edges) >= 2
+
+
+def cluster_type_for_family(family_key: str) -> str:
+    if family_key.startswith("/calendar/"):
+        return "repeated_variant_cluster"
+    if family_key.startswith("/admin/"):
+        return "generic_admin_navigation_cluster"
+    return "route_family_cluster"
+
+
+def reason_hint_for_family(family_key: str) -> str:
+    if family_key.startswith("/calendar/"):
+        return "compressed-calendar-variants"
+    if family_key.startswith("/admin/"):
+        return "compressed-admin-background-navigation"
+    return "compressed-low-value-navigation"
+
+
+def attach_background_clusters(
+    pages: list[PageRecord],
+    background_clusters: list[BackgroundNavigationCluster],
+) -> None:
+    clusters_by_page: dict[str, list[BackgroundNavigationCluster]] = defaultdict(list)
+    for cluster in background_clusters:
+        clusters_by_page[cluster.source_page_id].append(cluster)
+    for page in pages:
+        page.background_navigation_clusters = clusters_by_page.get(page.page_id, [])

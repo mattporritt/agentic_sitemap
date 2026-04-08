@@ -276,6 +276,17 @@ class WorkflowEdge(StrictModel):
     notes: str | None = None
 
 
+class BackgroundNavigationCluster(StrictModel):
+    cluster_type: str
+    source_page_id: str
+    family_key: str
+    count: int = 0
+    representative_targets: list[str] = Field(default_factory=list)
+    edge_relevance: EdgeRelevance = EdgeRelevance.CONTEXTUAL
+    edge_weight: EdgeWeight = EdgeWeight.LOW
+    reason_hint: str | None = None
+
+
 class NextStepHint(StrictModel):
     page_id: str | None = None
     target_url: str
@@ -293,6 +304,8 @@ class WorkflowGraph(StrictModel):
     candidate_edge_count: int = 0
     suppressed_edge_count: int = 0
     deduplicated_pair_count: int = 0
+    compressed_edge_count: int = 0
+    cluster_count: int = 0
     total_edges: int = 0
     edge_type_counts: dict[str, int] = Field(default_factory=dict)
     edge_weight_counts: dict[str, int] = Field(default_factory=dict)
@@ -300,6 +313,7 @@ class WorkflowGraph(StrictModel):
     pre_dedup_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
     pre_dedup_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
     next_step_changed_pages: list[dict[str, object]] = Field(default_factory=list)
+    background_clusters: list[BackgroundNavigationCluster] = Field(default_factory=list)
     edges: list[WorkflowEdge] = Field(default_factory=list)
 
 
@@ -352,6 +366,7 @@ class PageRecord(StrictModel):
     task_summary: PageTaskSummary = Field(default_factory=PageTaskSummary)
     safety: PageSafetySummary = Field(default_factory=PageSafetySummary)
     next_steps: list[NextStepHint] = Field(default_factory=list)
+    background_navigation_clusters: list[BackgroundNavigationCluster] = Field(default_factory=list)
     footer: FooterDebugInfo | None = None
     discovered_links: list[str] = Field(default_factory=list)
     network: list[NetworkEvent] = Field(default_factory=list)
@@ -380,6 +395,8 @@ class DiscoverySummary(StrictModel):
     workflow_candidate_edge_count: int = 0
     workflow_suppressed_edge_count: int = 0
     workflow_deduplicated_pairs: int = 0
+    workflow_compressed_edge_count: int = 0
+    workflow_cluster_count: int = 0
     workflow_edge_type_counts: dict[str, int] = Field(default_factory=dict)
     workflow_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
     workflow_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
@@ -399,6 +416,8 @@ class DiscoverySummary(StrictModel):
     top_task_edge_page_types: list[dict[str, int | str]] = Field(default_factory=list)
     top_high_value_edge_page_types: list[dict[str, int | str]] = Field(default_factory=list)
     noisy_admin_route_families: list[dict[str, int | str]] = Field(default_factory=list)
+    top_compressed_route_families: list[dict[str, int | str]] = Field(default_factory=list)
+    pages_with_most_compression: list[dict[str, int | str]] = Field(default_factory=list)
     strongest_primary_pages: list[dict[str, int | str]] = Field(default_factory=list)
     intent_populated_pages: int = 0
     materially_changed_next_steps: list[dict[str, object]] = Field(default_factory=list)
