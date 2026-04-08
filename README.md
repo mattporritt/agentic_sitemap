@@ -16,6 +16,7 @@ Phase 1 currently does the following:
 
 - runs a config-driven smoke test against a Moodle login flow
 - runs a timestamped verification smoke+crawl workflow for regression checks
+- runs a timestamped discovery crawl workflow for broader route discovery
 - logs into a Moodle LMS with a username and password
 - crawls authenticated pages on the same origin
 - follows safe links only
@@ -101,8 +102,9 @@ Recommended flow:
 2. Prepare a Moodle site for authenticated crawling.
 3. Run the smoke test to validate login and post-login capture.
 4. Run a verification smoke+crawl when you want a preserved regression snapshot.
-5. Run a bounded crawl with a dedicated crawler account.
-6. Inspect the generated JSON artifacts.
+5. Run a broader discovery crawl when you want to surface new page families and route patterns.
+6. Run a bounded crawl with a dedicated crawler account.
+7. Inspect the generated JSON artifacts.
 
 ### Minimum useful test site
 
@@ -213,6 +215,59 @@ verification-runs/
 
 This is intended for regression checking over time, especially for canonical URL handling, footer parsing, and extraction behavior.
 
+Verification and discovery crawls print lightweight progress lines in the CLI as pages are captured, for example:
+
+```text
+[16/40] 0016-course-view-php-id-4 course_view https://example.com/course/view.php?id=4
+```
+
+### Discovery crawl
+
+Run a broader but still controlled discovery crawl:
+
+```bash
+moodle-sitemap discover --config ./config.toml --max-pages 200 --max-depth 4
+```
+
+What this does:
+
+- runs a larger authenticated crawl budget than verification mode
+- keeps the same safety guardrails as the normal crawler
+- writes the crawl into a timestamped, git-ignored discovery folder
+- writes a machine-readable `discovery-summary.json`
+- writes a short human-readable `discovery-summary.md`
+- prints per-page crawl progress to the CLI
+
+Example output:
+
+```text
+discovery-runs/
+  2026-04-08T110000Z/
+    sitemap.json
+    discovery-summary.json
+    discovery-summary.md
+    pages/
+      0001-my.json
+      ...
+```
+
+Discovery mode is for widening coverage, not for exhaustive or interaction-heavy crawling. It still:
+
+- stays on the configured origin
+- follows safe links only
+- avoids logout and obvious destructive routes
+- avoids form submission
+- respects the configured page budget and depth cap
+
+The discovery summary is meant to highlight what a larger crawl surfaced, including:
+
+- total pages and page counts by type
+- newly seen route families compared with the latest verification run
+- query-heavy routes that may need future exclusions
+- canonicalization events still worth reviewing
+- slowest pages
+- remaining unknown or weakly classified pages
+
 ### Full crawl
 
 ```bash
@@ -240,6 +295,11 @@ output/
 ```
 
 `sitemap.json` contains the site manifest, a compact summary section, and page entries for all visited pages. Each page file contains the same page-record schema as the manifest entry for that page.
+
+Discovery runs also include:
+
+- `discovery-summary.json` for machine-readable post-run analysis
+- `discovery-summary.md` for a short human-readable review
 
 `smoke-test.json` contains a single post-login checkpoint record with `site_url`, `browser`, URLs before and after login, title, status when available, body metadata, breadcrumbs, timestamp, and `login_succeeded`.
 

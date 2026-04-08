@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from moodle_sitemap.config import load_smoke_config
-from moodle_sitemap.crawl import CrawlConfig, crawl_site
+from moodle_sitemap.crawl import CrawlConfig, ProgressCallback, crawl_site
 from moodle_sitemap.smoke import SmokeRunResult, run_smoke_test
 
 
@@ -28,6 +28,7 @@ def run_verification(
     config_path: str | Path,
     max_pages: int,
     base_dir: str | Path = "verification-runs",
+    progress_callback: ProgressCallback | None = None,
 ) -> VerificationRunResult:
     config = load_smoke_config(config_path)
     run_dir = create_verification_run_dir(base_dir)
@@ -41,6 +42,7 @@ def run_verification(
             max_pages=max_pages,
             headless=config.headless,
             browser_engine=config.browser_engine,
-        )
+        ),
+        progress_callback=progress_callback,
     )
     return VerificationRunResult(run_dir=run_dir, smoke=smoke, visited_pages=manifest.visited_pages)

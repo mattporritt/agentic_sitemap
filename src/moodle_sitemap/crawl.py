@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -32,8 +34,12 @@ class CrawlConfig:
     password: str
     output_dir: Path
     max_pages: int = 200
+    max_depth: int | None = None
     headless: bool = True
     browser_engine: BrowserEngine = BrowserEngine.CHROMIUM
+
+
+ProgressCallback = Callable[[PageRecord, int, int], None]
 
 
 @dataclass
@@ -69,7 +75,11 @@ class CrawlVisitIndex:
         return True
 
 
-def crawl_site(config: CrawlConfig) -> SiteManifest:
+def crawl_site(
+    config: CrawlConfig,
+    *,
+    progress_callback: ProgressCallback | None = None,
+) -> SiteManifest:
     crawl_started_at = datetime.now(timezone.utc)
     start_url = normalize_url(config.site_url)
     parsed_site = urlparse(start_url)
@@ -79,7 +89,7 @@ def crawl_site(config: CrawlConfig) -> SiteManifest:
     store.prepare()
 
     visit_index = CrawlVisitIndex()
-    queue: deque[tuple[str, str | None]] = deque([(start_url, None)])
+    queue: deque[tuple[str, str | None, int]] = deque([(start_url, None, 0)])
     visit_index.mark_queued(start_url)
     page_records: list[PageRecord] = []
 
@@ -95,17 +105,19 @@ def crawl_site(config: CrawlConfig) -> SiteManifest:
 
         try:
             while queue and len(page_records) < config.max_pages:
-                target_url, referrer = queue.popleft()
+                target_url, referrer, depth = queue.popleft()
                 visit_index.mark_dequeued(target_url)
                 if visit_index.should_skip_target(target_url):
                     continue
 
                 recorder.reset()
+                load_started = perf_counter()
                 response = session.page.goto(target_url, wait_until="domcontentloaded")
                 try:
                     session.page.wait_for_load_state("networkidle", timeout=5_000)
                 except PlaywrightTimeoutError:
                     pass
+                load_duration_seconds = perf_counter() - load_started
 
                 final_url = normalize_url(session.page.url)
                 if not same_origin(final_url, origin):
@@ -142,16 +154,23 @@ def crawl_site(config: CrawlConfig) -> SiteManifest:
                     footer=extract_footer_info(session.page),
                     discovered_links=discovered_links,
                     network=list(recorder.events),
+                    crawl_depth=depth,
+                    load_duration_seconds=round(load_duration_seconds, 6),
                 )
                 store.write_page(page_record)
                 page_records.append(page_record)
+                if progress_callback:
+                    progress_callback(page_record, len(page_records), config.max_pages)
+
+                if config.max_depth is not None and depth >= config.max_depth:
+                    continue
 
                 for link in discovered_links:
                     if len(visit_index.visited_normalized) + len(queue) >= config.max_pages:
                         break
                     if not visit_index.mark_queued(link):
                         continue
-                    queue.append((link, final_url))
+                    queue.append((link, final_url, depth + 1))
         finally:
             recorder.detach()
 
@@ -172,6 +191,15 @@ def crawl_site(config: CrawlConfig) -> SiteManifest:
     )
     store.write_manifest(manifest)
     return manifest
+
+
+def format_progress_line(page: PageRecord, *, current_count: int, max_pages: int) -> str:
+    return (
+        f"[{current_count}/{max_pages}] "
+        f"{page.page_id} "
+        f"{page.page_type.value} "
+        f"{page.normalized_url}"
+    )
 
 
 def build_manifest_summary(

@@ -108,6 +108,8 @@ class PageRecord(StrictModel):
     footer: FooterDebugInfo | None = None
     discovered_links: list[str] = Field(default_factory=list)
     network: list[NetworkEvent] = Field(default_factory=list)
+    crawl_depth: int = 0
+    load_duration_seconds: float | None = None
     captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -117,6 +119,25 @@ class ManifestSummary(StrictModel):
     page_type_counts: dict[str, int] = Field(default_factory=dict)
     crawl_started_at: datetime
     crawl_finished_at: datetime
+
+
+class DiscoverySummary(StrictModel):
+    site_url: HttpUrl
+    run_dir: str
+    total_pages: int
+    unique_normalized_urls: int
+    unknown_pages: int
+    crawl_duration_seconds: float
+    max_depth_reached: int
+    page_type_counts: dict[str, int] = Field(default_factory=dict)
+    top_route_families: list[dict[str, int | str]] = Field(default_factory=list)
+    query_heavy_routes: list[dict[str, int | str]] = Field(default_factory=list)
+    canonicalization_events: int = 0
+    slowest_pages: list[dict[str, int | float | str]] = Field(default_factory=list)
+    unknown_pages_detail: list[dict[str, str]] = Field(default_factory=list)
+    weak_classification_candidates: list[dict[str, str]] = Field(default_factory=list)
+    exclusion_candidates: list[dict[str, int | str]] = Field(default_factory=list)
+    newly_seen_route_families: list[str] = Field(default_factory=list)
 
 
 class SiteManifest(StrictModel):

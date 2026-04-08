@@ -4,7 +4,8 @@ from pathlib import Path
 
 import typer
 
-from moodle_sitemap.crawl import CrawlConfig, crawl_site
+from moodle_sitemap.crawl import CrawlConfig, crawl_site, format_progress_line
+from moodle_sitemap.discovery import run_discovery
 from moodle_sitemap.smoke import run_smoke_test
 from moodle_sitemap.verify import run_verification
 
@@ -25,6 +26,10 @@ def main() -> None:
     """CLI entrypoint."""
 
 
+def emit_progress(page, current_count: int, max_pages: int) -> None:
+    typer.echo(format_progress_line(page, current_count=current_count, max_pages=max_pages))
+
+
 @app.command()
 def crawl(
     site_url: str = typer.Option(..., help="Base Moodle site URL."),
@@ -42,7 +47,8 @@ def crawl(
             output_dir=output,
             max_pages=max_pages,
             headless=parse_bool(headless),
-        )
+        ),
+        progress_callback=emit_progress,
     )
     typer.echo(f"Crawled {manifest.visited_pages} pages into {output}")
 
@@ -77,7 +83,12 @@ def verify(
     ),
 ) -> None:
     try:
-        result = run_verification(config_path=config, max_pages=max_pages, base_dir=output_root)
+        result = run_verification(
+            config_path=config,
+            max_pages=max_pages,
+            base_dir=output_root,
+            progress_callback=emit_progress,
+        )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     except RuntimeError as exc:
@@ -87,6 +98,36 @@ def verify(
     typer.echo(
         f"Verification run wrote {result.smoke.artifact_path} and crawled "
         f"{result.visited_pages} pages into {result.run_dir}"
+    )
+
+
+@app.command()
+def discover(
+    config: Path = typer.Option(..., help="Path to the TOML config file used for discovery crawling."),
+    max_pages: int = typer.Option(200, min=1, help="Maximum pages to crawl during discovery."),
+    max_depth: int = typer.Option(4, min=1, help="Maximum link depth for discovery crawling."),
+    output_root: Path = typer.Option(
+        Path("discovery-runs"),
+        help="Root directory for timestamped discovery runs.",
+    ),
+) -> None:
+    try:
+        result = run_discovery(
+            config_path=config,
+            max_pages=max_pages,
+            max_depth=max_depth,
+            base_dir=output_root,
+            progress_callback=emit_progress,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except RuntimeError as exc:
+        typer.echo(f"Discovery failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Discovery run wrote {result.summary_path} and crawled "
+        f"{result.manifest.visited_pages} pages into {result.run_dir}"
     )
 
 

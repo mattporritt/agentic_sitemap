@@ -8,3 +8,4 @@ output/
 _smoke_test/
 config.toml
 verification-runs/
+discovery-runs/
