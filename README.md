@@ -370,6 +370,7 @@ Each crawled page record includes:
 - `final_url`: the final browser URL after navigation
 - `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
 - `affordances`: structured agent-usable UI understanding without interaction
+- `task_summary`: compact page-purpose hints derived from the strongest visible affordances
 - `next_steps`: compact likely next-page candidates derived from the workflow edge layer
 
 ### Manifest summary
@@ -420,6 +421,8 @@ Each page record includes:
 - body id and classes
 - breadcrumbs
 - affordances for actions, navigation, forms, editors, file inputs, filters, tabs, tables, lists, and sections
+- affordance importance and likely-intent hints for actions, navigation, and forms
+- a compact page-level `task_summary`
 - discovered links
 - conservative safety hints on actions and forms
 - next-step hints derived from page-to-page workflow edges
@@ -441,6 +444,7 @@ This is different from raw discovered links:
 - discovered links are just URLs found on a page
 - workflow edges are filtered, typed relationships between visited pages
 - edges include the source affordance label or kind when known
+- edges also include a weight and relevance hint so downstream tools can separate task-bearing paths from generic site navigation
 
 Edge types stay intentionally small:
 
@@ -452,6 +456,30 @@ Edge types stay intentionally small:
 - `activity`
 - `admin`
 - `related`
+
+Each workflow edge also carries a separate weighting layer:
+
+- `edge_weight`: `high`, `medium`, or `low`
+- `edge_relevance`: `task`, `support`, `navigation`, or `contextual`
+- `source_affordance_importance`: how prominent the originating control looked
+- `reason_hint`: a short explanation of why the edge was weighted that way
+
+The important distinction is:
+
+- raw discovered links tell you that one page referenced another URL
+- workflow edges tell you that a visible page control likely leads to another visited page
+- weighted workflow edges help you focus on likely task progression instead of every navigational hop
+
+### Affordance importance and likely intent
+
+Action, navigation, and form affordances now include lightweight importance and intent hints such as:
+
+- `importance_level`: `primary`, `secondary`, or `tertiary`
+- `likely_intent`: values like `create`, `edit`, `save`, `search`, `configure`, `message`, `upload`, `view`, or `unknown`
+- `prominence_score` on actions
+- `central_to_page` and `likely_mutation_strength` on forms
+
+These are deterministic heuristics based on visible labels, classes, button types, form structure, and route shape. They are meant to improve agent reasoning, not replace human review.
 
 ### Affordance safety hints
 
@@ -504,11 +532,18 @@ Example page record shape:
       "page_id": "0016-course-view-php-id-4",
       "target_url": "https://example.com/course/view.php?id=4",
       "edge_type": "navigation",
+      "edge_weight": "high",
+      "edge_relevance": "task",
       "label": "Course 1",
       "confidence": 0.95,
       "notes": "dashboard-to-course"
     }
   ],
+  "task_summary": {
+    "primary_page_intent": "navigate",
+    "primary_actions": ["Course 1", "Course 2", "Calendar"],
+    "task_relevance_score": 76
+  },
   "affordances": {
     "actions": [
       {
@@ -516,6 +551,11 @@ Example page record shape:
         "url": null,
         "element_type": "button",
         "action_key": "turn-editing-on",
+        "importance_level": "primary",
+        "likely_intent": "edit",
+        "prominence_score": 95,
+        "in_primary_region": true,
+        "in_menu_or_overflow": false,
         "is_primary": true,
         "disabled": false,
         "safety": {
@@ -543,7 +583,11 @@ Example page record shape:
           }
         ],
         "submit_controls": [],
-        "purpose": "edit_save",
+        "purpose": "edit_form",
+        "importance_level": "secondary",
+        "likely_intent": "edit",
+        "likely_mutation_strength": "low",
+        "central_to_page": false,
         "safety": {
           "inspect_only": false,
           "navigation_safe": false,

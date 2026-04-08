@@ -38,7 +38,7 @@ def test_summarize_page_safety_marks_medium_for_mutating_form() -> None:
                     method="post",
                     action="https://example.com/course/edit.php",
                     fields=[FormFieldAffordance(name="fullname")],
-                    purpose=FormPurpose.EDIT_SAVE,
+                    purpose=FormPurpose.EDIT_FORM,
                     safety=SafetyHints(likely_mutating=True),
                 )
             ]

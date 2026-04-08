@@ -98,18 +98,39 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
         pages=[pages[0]],
     )
 
-    summary = build_discovery_summary(manifest, run_dir=tmp_path / "run", baseline_manifest=baseline)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "workflow-edges.json").write_text(
+        json.dumps(
+            {
+                "edge_type_counts": {"navigation": 1, "related": 1},
+                "edge_weight_counts": {"high": 1, "medium": 0, "low": 1},
+                "edge_relevance_counts": {"task": 1, "support": 0, "navigation": 0, "contextual": 1},
+                "edges": [
+                    {"from_page_id": "0002-course-view", "edge_relevance": "task"},
+                    {"from_page_id": "0003-unknown", "edge_relevance": "contextual"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = build_discovery_summary(manifest, run_dir=run_dir, baseline_manifest=baseline)
 
     assert summary.total_pages == 3
     assert summary.unique_normalized_urls == 3
     assert summary.unknown_pages == 1
     assert summary.max_depth_reached == 3
     assert summary.page_type_counts["course_view"] == 1
+    assert summary.workflow_edge_weight_counts["high"] == 1
+    assert summary.workflow_edge_relevance_counts["task"] == 1
     assert summary.top_route_families[0]["route_family"] in {"/course/view.php", "/custom/page.php", "/my"}
     assert summary.query_heavy_routes
     assert summary.slowest_pages[0]["normalized_url"] == "https://example.com/course/view.php?id=4"
     assert summary.unknown_pages_detail[0]["normalized_url"] == "https://example.com/custom/page.php?foo=1"
     assert "/course/view.php" in summary.newly_seen_route_families
+    assert summary.top_task_edge_page_types[0]["page_type"] == "course_view"
+    assert summary.strongest_primary_pages[0]["page_id"] == "0001-my"
 
 
 def test_recommended_next_actions_returns_human_useful_items() -> None:

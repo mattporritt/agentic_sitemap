@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import re
 from typing import TYPE_CHECKING
 
@@ -17,9 +18,13 @@ from moodle_sitemap.models import (
     FormFieldAffordance,
     FormFieldType,
     FormPurpose,
+    ImportanceLevel,
+    LikelyIntent,
+    MutationStrength,
     NavigationItem,
     PageAffordances,
     PageFeatures,
+    PageTaskSummary,
     SafetyHints,
     SectionAffordance,
     TabAffordance,
@@ -43,6 +48,20 @@ MUTATING_KEYWORDS = {
     "update",
     "upload",
 }
+
+INTENT_KEYWORDS: list[tuple[LikelyIntent, set[str]]] = [
+    (LikelyIntent.DELETE, {"delete", "remove", "trash", "purge"}),
+    (LikelyIntent.CREATE, {"add", "new", "create"}),
+    (LikelyIntent.SAVE, {"save", "submit"}),
+    (LikelyIntent.EDIT, {"edit", "update", "modify"}),
+    (LikelyIntent.SEARCH, {"search", "find", "query"}),
+    (LikelyIntent.FILTER, {"filter", "refine"}),
+    (LikelyIntent.CONFIGURE, {"setting", "settings", "configure", "preferences", "option"}),
+    (LikelyIntent.MESSAGE, {"message", "reply", "notification", "chat"}),
+    (LikelyIntent.UPLOAD, {"upload", "import", "attach"}),
+    (LikelyIntent.DOWNLOAD, {"download", "export"}),
+    (LikelyIntent.VIEW, {"view", "overview", "open"}),
+]
 
 DESTRUCTIVE_KEYWORDS = {
     "delete",
@@ -368,22 +387,24 @@ def extract_page_features(page: Page) -> PageFeatures:
 
 def build_page_features_from_payload(payload: dict) -> PageFeatures:
     affordances_payload = payload.get("affordances", {})
+    affordances = PageAffordances(
+        actions=normalize_actions(affordances_payload.get("actions", [])),
+        navigation=normalize_navigation_items(affordances_payload.get("navigation", [])),
+        forms=normalize_forms(affordances_payload.get("forms", [])),
+        editors=EditorSummary(**affordances_payload.get("editors", {})),
+        file_inputs=normalize_file_inputs(affordances_payload.get("file_inputs", [])),
+        filters=normalize_filter_controls(affordances_payload.get("filters", [])),
+        tabs=normalize_tabs(affordances_payload.get("tabs", [])),
+        tables=normalize_tables(affordances_payload.get("tables", [])),
+        lists=normalize_lists(affordances_payload.get("lists", [])),
+        sections=normalize_sections(affordances_payload.get("sections", [])),
+    )
     return PageFeatures(
         body_id=(payload.get("body_id") or None),
         body_classes=normalize_body_classes(payload.get("body_classes", [])),
         breadcrumbs=normalize_breadcrumbs(payload.get("breadcrumbs", [])),
-        affordances=PageAffordances(
-            actions=normalize_actions(affordances_payload.get("actions", [])),
-            navigation=normalize_navigation_items(affordances_payload.get("navigation", [])),
-            forms=normalize_forms(affordances_payload.get("forms", [])),
-            editors=EditorSummary(**affordances_payload.get("editors", {})),
-            file_inputs=normalize_file_inputs(affordances_payload.get("file_inputs", [])),
-            filters=normalize_filter_controls(affordances_payload.get("filters", [])),
-            tabs=normalize_tabs(affordances_payload.get("tabs", [])),
-            tables=normalize_tables(affordances_payload.get("tables", [])),
-            lists=normalize_lists(affordances_payload.get("lists", [])),
-            sections=normalize_sections(affordances_payload.get("sections", [])),
-        ),
+        affordances=affordances,
+        task_summary=derive_page_task_summary(affordances),
     )
 
 
@@ -419,12 +440,31 @@ def normalize_actions(values: list[dict] | None) -> list[ActionAffordance]:
         destructive = contains_keyword(text_blob, DESTRUCTIVE_KEYWORDS)
         confirmation = contains_keyword(text_blob, CONFIRMATION_KEYWORDS) or "data-confirmation" in text_blob
         navigation_safe = element_type in {AffordanceElementType.LINK, AffordanceElementType.TAB} and not mutating and not destructive
+        likely_intent = infer_likely_intent(text_blob, default=LikelyIntent.NAVIGATE if navigation_safe else LikelyIntent.UNKNOWN)
+        importance_level = infer_action_importance(
+            label=label,
+            class_name=normalize_scalar_text(value.get("class_name")),
+            element_type=element_type,
+            likely_intent=likely_intent,
+            has_popup=bool(value.get("has_popup")),
+        )
+        prominence_score = infer_prominence_score(
+            importance_level=importance_level,
+            is_primary_class=is_primary_class(value.get("class_name")),
+            likely_intent=likely_intent,
+            in_menu_or_overflow=is_menu_or_overflow(value.get("class_name"), value.get("data_action")),
+        )
         normalized.append(
             ActionAffordance(
                 label=label,
                 url=url,
                 element_type=element_type,
                 action_key=make_action_key(label),
+                importance_level=importance_level,
+                likely_intent=likely_intent,
+                prominence_score=prominence_score,
+                in_primary_region=is_primary_region(value.get("class_name"), label),
+                in_menu_or_overflow=is_menu_or_overflow(value.get("class_name"), value.get("data_action")),
                 is_primary=is_primary_class(value.get("class_name")),
                 disabled=disabled,
                 safety=SafetyHints(
@@ -459,6 +499,8 @@ def normalize_navigation_items(values: list[dict] | None) -> list[NavigationItem
                 url=url,
                 kind=normalize_scalar_text(value.get("kind")),
                 current=bool(value.get("current")),
+                importance_level=ImportanceLevel.PRIMARY if bool(value.get("current")) else ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.NAVIGATE,
             )
         )
     return normalized
@@ -477,13 +519,16 @@ def normalize_forms(values: list[dict] | None) -> list[FormAffordance]:
             fields=fields,
             submit_controls=submit_controls,
         )
-        mutating = purpose == FormPurpose.EDIT_SAVE or (
+        mutating = purpose in {FormPurpose.EDIT_FORM, FormPurpose.SETTINGS_FORM, FormPurpose.MESSAGE_FORM, FormPurpose.UPLOAD_FORM} or (
             (normalize_scalar_text(value.get("method")) or "").lower() == "post"
-            and purpose != FormPurpose.SEARCH_FILTER
+            and purpose not in {FormPurpose.SEARCH_FORM, FormPurpose.FILTER_FORM}
         )
         destructive = any(control.safety.likely_destructive for control in submit_controls)
         confirmation = any(control.safety.requires_confirmation_likely for control in submit_controls)
         navigation_safe = not mutating and (normalize_scalar_text(value.get("method")) or "get").lower() == "get"
+        likely_intent = form_purpose_to_intent(purpose)
+        mutation_strength = infer_mutation_strength(mutating=mutating, destructive=destructive, submit_controls=submit_controls, fields=fields)
+        importance_level = infer_form_importance(purpose=purpose, fields=fields, submit_controls=submit_controls)
         normalized.append(
             FormAffordance(
                 id=normalize_scalar_text(value.get("id")),
@@ -492,6 +537,10 @@ def normalize_forms(values: list[dict] | None) -> list[FormAffordance]:
                 fields=fields,
                 submit_controls=submit_controls,
                 purpose=purpose,
+                importance_level=importance_level,
+                likely_intent=likely_intent,
+                likely_mutation_strength=mutation_strength,
+                central_to_page=is_form_central_to_page(purpose=purpose, fields=fields),
                 safety=SafetyHints(
                     inspect_only=navigation_safe,
                     navigation_safe=navigation_safe,
@@ -669,11 +718,19 @@ def infer_form_purpose(
         ]
         if item
     )
-    if contains_keyword(text_blob, SEARCH_KEYWORDS | FILTER_KEYWORDS | SORT_KEYWORDS):
-        return FormPurpose.SEARCH_FILTER
+    if contains_keyword(text_blob, SEARCH_KEYWORDS):
+        return FormPurpose.SEARCH_FORM
+    if contains_keyword(text_blob, FILTER_KEYWORDS | SORT_KEYWORDS):
+        return FormPurpose.FILTER_FORM
+    if "message" in text_blob or "notification" in text_blob:
+        return FormPurpose.MESSAGE_FORM
+    if contains_keyword(text_blob, {"upload", "import", "file", "attachment"}):
+        return FormPurpose.UPLOAD_FORM
+    if contains_keyword(text_blob, {"setting", "settings", "preference", "preferences", "option"}):
+        return FormPurpose.SETTINGS_FORM
     if contains_keyword(text_blob, MUTATING_KEYWORDS):
-        return FormPurpose.EDIT_SAVE
-    return FormPurpose.UNKNOWN
+        return FormPurpose.EDIT_FORM
+    return FormPurpose.UNKNOWN_FORM
 
 
 def infer_filter_purpose(text: str) -> FilterControlPurpose:
@@ -689,6 +746,13 @@ def infer_filter_purpose(text: str) -> FilterControlPurpose:
 
 def contains_keyword(text: str, keywords: set[str]) -> bool:
     return any(keyword in text for keyword in keywords)
+
+
+def infer_likely_intent(text: str, *, default: LikelyIntent = LikelyIntent.UNKNOWN) -> LikelyIntent:
+    for intent, keywords in INTENT_KEYWORDS:
+        if contains_keyword(text, keywords):
+            return intent
+    return default
 
 
 def normalize_element_type(value: object) -> AffordanceElementType:
@@ -726,6 +790,143 @@ def make_action_key(label: str) -> str:
 def is_primary_class(value: object) -> bool:
     text = (normalize_scalar_text(value) or "").lower()
     return any(token in text for token in {"btn-primary", "primary", "singlebutton", "mainbutton"})
+
+
+def is_primary_region(class_name: object, label: str) -> bool:
+    text = (normalize_scalar_text(class_name) or "").lower()
+    return is_primary_class(class_name) or any(token in text for token in {"primary", "main", "singlebutton"}) or label.lower().startswith("new ")
+
+
+def is_menu_or_overflow(class_name: object, data_action: object) -> bool:
+    text = " ".join(
+        part for part in [(normalize_scalar_text(class_name) or "").lower(), (normalize_scalar_text(data_action) or "").lower()] if part
+    )
+    return any(token in text for token in {"dropdown", "menu", "overflow", "moremenu"})
+
+
+def infer_action_importance(
+    *,
+    label: str,
+    class_name: str | None,
+    element_type: AffordanceElementType,
+    likely_intent: LikelyIntent,
+    has_popup: bool,
+) -> ImportanceLevel:
+    label_lower = label.lower()
+    class_text = (class_name or "").lower()
+    if is_primary_class(class_name) or label_lower.startswith(("new ", "add ", "create ", "save ", "submit ")) or likely_intent in {
+        LikelyIntent.CREATE,
+        LikelyIntent.SAVE,
+        LikelyIntent.UPLOAD,
+    }:
+        return ImportanceLevel.PRIMARY
+    if element_type in {AffordanceElementType.MENU_TRIGGER} or has_popup or any(token in class_text for token in {"secondary", "nav", "tab"}):
+        return ImportanceLevel.SECONDARY
+    if likely_intent in {LikelyIntent.NAVIGATE, LikelyIntent.VIEW, LikelyIntent.SEARCH, LikelyIntent.FILTER, LikelyIntent.CONFIGURE, LikelyIntent.MESSAGE}:
+        return ImportanceLevel.SECONDARY
+    return ImportanceLevel.TERTIARY
+
+
+def infer_prominence_score(
+    *,
+    importance_level: ImportanceLevel,
+    is_primary_class: bool,
+    likely_intent: LikelyIntent,
+    in_menu_or_overflow: bool,
+) -> int:
+    score = {
+        ImportanceLevel.PRIMARY: 90,
+        ImportanceLevel.SECONDARY: 60,
+        ImportanceLevel.TERTIARY: 30,
+    }[importance_level]
+    if is_primary_class:
+        score += 10
+    if likely_intent in {LikelyIntent.CREATE, LikelyIntent.SAVE, LikelyIntent.CONFIGURE, LikelyIntent.MESSAGE}:
+        score += 5
+    if in_menu_or_overflow:
+        score -= 15
+    return max(0, min(100, score))
+
+
+def form_purpose_to_intent(purpose: FormPurpose) -> LikelyIntent:
+    mapping = {
+        FormPurpose.SEARCH_FORM: LikelyIntent.SEARCH,
+        FormPurpose.FILTER_FORM: LikelyIntent.FILTER,
+        FormPurpose.EDIT_FORM: LikelyIntent.EDIT,
+        FormPurpose.SETTINGS_FORM: LikelyIntent.CONFIGURE,
+        FormPurpose.MESSAGE_FORM: LikelyIntent.MESSAGE,
+        FormPurpose.UPLOAD_FORM: LikelyIntent.UPLOAD,
+        FormPurpose.UNKNOWN_FORM: LikelyIntent.UNKNOWN,
+    }
+    return mapping[purpose]
+
+
+def infer_mutation_strength(
+    *,
+    mutating: bool,
+    destructive: bool,
+    submit_controls: list[ActionAffordance],
+    fields: list[FormFieldAffordance],
+) -> MutationStrength:
+    if destructive:
+        return MutationStrength.HIGH
+    if not mutating:
+        return MutationStrength.NONE
+    if any(
+        control.likely_intent in {LikelyIntent.SAVE, LikelyIntent.CREATE, LikelyIntent.UPLOAD, LikelyIntent.MESSAGE}
+        for control in submit_controls
+    ) or len(fields) >= 4:
+        return MutationStrength.MEDIUM
+    return MutationStrength.LOW
+
+
+def infer_form_importance(
+    *,
+    purpose: FormPurpose,
+    fields: list[FormFieldAffordance],
+    submit_controls: list[ActionAffordance],
+) -> ImportanceLevel:
+    if purpose in {FormPurpose.EDIT_FORM, FormPurpose.SETTINGS_FORM, FormPurpose.MESSAGE_FORM, FormPurpose.UPLOAD_FORM} and submit_controls:
+        return ImportanceLevel.PRIMARY
+    if purpose in {FormPurpose.SEARCH_FORM, FormPurpose.FILTER_FORM}:
+        return ImportanceLevel.SECONDARY
+    if len(fields) >= 5:
+        return ImportanceLevel.SECONDARY
+    return ImportanceLevel.TERTIARY
+
+
+def is_form_central_to_page(*, purpose: FormPurpose, fields: list[FormFieldAffordance]) -> bool:
+    if purpose in {FormPurpose.MESSAGE_FORM, FormPurpose.UPLOAD_FORM, FormPurpose.SETTINGS_FORM}:
+        return True
+    if purpose == FormPurpose.EDIT_FORM and len(fields) >= 3:
+        return True
+    if purpose in {FormPurpose.SEARCH_FORM, FormPurpose.FILTER_FORM} and len(fields) <= 2:
+        return False
+    return False
+
+
+def derive_page_task_summary(affordances: PageAffordances) -> PageTaskSummary:
+    ranked_actions = sorted(
+        affordances.actions,
+        key=lambda item: (-item.prominence_score, item.importance_level.value, item.label),
+    )
+    primary_actions = [action.label for action in ranked_actions[:3]]
+    intent_counts = Counter(
+        [action.likely_intent for action in affordances.actions if action.likely_intent != LikelyIntent.UNKNOWN]
+        + [form.likely_intent for form in affordances.forms if form.likely_intent != LikelyIntent.UNKNOWN]
+    )
+    primary_page_intent = intent_counts.most_common(1)[0][0] if intent_counts else LikelyIntent.UNKNOWN
+    task_relevance_score = min(
+        100,
+        sum(action.prominence_score for action in ranked_actions[:3]) // max(len(ranked_actions[:3]), 1)
+        if ranked_actions
+        else 0,
+    )
+    return PageTaskSummary(
+        primary_page_intent=primary_page_intent,
+        primary_actions=primary_actions,
+        task_relevance_score=task_relevance_score,
+    )
 
 
 def normalize_scalar_text(value: object) -> str | None:

@@ -56,9 +56,13 @@ class FormFieldType(StrEnum):
 
 
 class FormPurpose(StrEnum):
-    SEARCH_FILTER = "search_filter"
-    EDIT_SAVE = "edit_save"
-    UNKNOWN = "unknown"
+    SEARCH_FORM = "search_form"
+    FILTER_FORM = "filter_form"
+    EDIT_FORM = "edit_form"
+    SETTINGS_FORM = "settings_form"
+    MESSAGE_FORM = "message_form"
+    UPLOAD_FORM = "upload_form"
+    UNKNOWN_FORM = "unknown_form"
 
 
 class FilterControlPurpose(StrEnum):
@@ -66,6 +70,35 @@ class FilterControlPurpose(StrEnum):
     FILTER = "filter"
     SORT = "sort"
     UNKNOWN = "unknown"
+
+
+class ImportanceLevel(StrEnum):
+    PRIMARY = "primary"
+    SECONDARY = "secondary"
+    TERTIARY = "tertiary"
+
+
+class LikelyIntent(StrEnum):
+    CREATE = "create"
+    EDIT = "edit"
+    SAVE = "save"
+    DELETE = "delete"
+    SEARCH = "search"
+    FILTER = "filter"
+    NAVIGATE = "navigate"
+    CONFIGURE = "configure"
+    MESSAGE = "message"
+    UPLOAD = "upload"
+    DOWNLOAD = "download"
+    VIEW = "view"
+    UNKNOWN = "unknown"
+
+
+class MutationStrength(StrEnum):
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 class WorkflowEdgeType(StrEnum):
@@ -83,6 +116,19 @@ class PageRiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class EdgeWeight(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class EdgeRelevance(StrEnum):
+    TASK = "task"
+    SUPPORT = "support"
+    NAVIGATION = "navigation"
+    CONTEXTUAL = "contextual"
 
 
 class SafetyHints(StrictModel):
@@ -108,6 +154,11 @@ class ActionAffordance(StrictModel):
     url: str | None = None
     element_type: AffordanceElementType = AffordanceElementType.LINK
     action_key: str | None = None
+    importance_level: ImportanceLevel = ImportanceLevel.TERTIARY
+    likely_intent: LikelyIntent = LikelyIntent.UNKNOWN
+    prominence_score: int = 0
+    in_primary_region: bool = False
+    in_menu_or_overflow: bool = False
     is_primary: bool = False
     disabled: bool = False
     safety: SafetyHints = Field(default_factory=SafetyHints)
@@ -127,7 +178,11 @@ class FormAffordance(StrictModel):
     action: str | None = None
     fields: list[FormFieldAffordance] = Field(default_factory=list)
     submit_controls: list[ActionAffordance] = Field(default_factory=list)
-    purpose: FormPurpose = FormPurpose.UNKNOWN
+    purpose: FormPurpose = FormPurpose.UNKNOWN_FORM
+    importance_level: ImportanceLevel = ImportanceLevel.TERTIARY
+    likely_intent: LikelyIntent = LikelyIntent.UNKNOWN
+    likely_mutation_strength: MutationStrength = MutationStrength.NONE
+    central_to_page: bool = False
     safety: SafetyHints = Field(default_factory=SafetyHints)
 
 
@@ -142,6 +197,8 @@ class NavigationItem(StrictModel):
     url: str | None = None
     kind: str | None = None
     current: bool = False
+    importance_level: ImportanceLevel = ImportanceLevel.TERTIARY
+    likely_intent: LikelyIntent = LikelyIntent.NAVIGATE
 
 
 class TabAffordance(StrictModel):
@@ -194,6 +251,12 @@ class PageAffordances(StrictModel):
     sections: list[SectionAffordance] = Field(default_factory=list)
 
 
+class PageTaskSummary(StrictModel):
+    primary_page_intent: LikelyIntent = LikelyIntent.UNKNOWN
+    primary_actions: list[str] = Field(default_factory=list)
+    task_relevance_score: int = 0
+
+
 class WorkflowEdge(StrictModel):
     from_page_id: str
     to_page_id: str | None = None
@@ -201,7 +264,11 @@ class WorkflowEdge(StrictModel):
     edge_type: WorkflowEdgeType = WorkflowEdgeType.RELATED
     source_affordance_label: str | None = None
     source_affordance_kind: str | None = None
+    source_affordance_importance: ImportanceLevel | None = None
+    edge_weight: EdgeWeight = EdgeWeight.LOW
+    edge_relevance: EdgeRelevance = EdgeRelevance.CONTEXTUAL
     confidence: float | None = None
+    reason_hint: str | None = None
     notes: str | None = None
 
 
@@ -209,8 +276,11 @@ class NextStepHint(StrictModel):
     page_id: str | None = None
     target_url: str
     edge_type: WorkflowEdgeType = WorkflowEdgeType.RELATED
+    edge_weight: EdgeWeight = EdgeWeight.LOW
+    edge_relevance: EdgeRelevance = EdgeRelevance.CONTEXTUAL
     label: str | None = None
     confidence: float | None = None
+    likely_intent: LikelyIntent = LikelyIntent.UNKNOWN
     notes: str | None = None
 
 
@@ -218,6 +288,8 @@ class WorkflowGraph(StrictModel):
     role_profile: str = "unlabeled"
     total_edges: int = 0
     edge_type_counts: dict[str, int] = Field(default_factory=dict)
+    edge_weight_counts: dict[str, int] = Field(default_factory=dict)
+    edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
     edges: list[WorkflowEdge] = Field(default_factory=list)
 
 
@@ -251,6 +323,7 @@ class PageFeatures(StrictModel):
     body_classes: list[str] = Field(default_factory=list)
     breadcrumbs: list[str] = Field(default_factory=list)
     affordances: PageAffordances = Field(default_factory=PageAffordances)
+    task_summary: PageTaskSummary = Field(default_factory=PageTaskSummary)
 
 
 class PageRecord(StrictModel):
@@ -266,6 +339,7 @@ class PageRecord(StrictModel):
     body_classes: list[str] = Field(default_factory=list)
     breadcrumbs: list[str] = Field(default_factory=list)
     affordances: PageAffordances = Field(default_factory=PageAffordances)
+    task_summary: PageTaskSummary = Field(default_factory=PageTaskSummary)
     safety: PageSafetySummary = Field(default_factory=PageSafetySummary)
     next_steps: list[NextStepHint] = Field(default_factory=list)
     footer: FooterDebugInfo | None = None
@@ -294,6 +368,8 @@ class DiscoverySummary(StrictModel):
     unknown_pages: int
     workflow_edge_count: int = 0
     workflow_edge_type_counts: dict[str, int] = Field(default_factory=dict)
+    workflow_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
+    workflow_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
     crawl_duration_seconds: float
     max_depth_reached: int
     page_type_counts: dict[str, int] = Field(default_factory=dict)
@@ -305,6 +381,8 @@ class DiscoverySummary(StrictModel):
     weak_classification_candidates: list[dict[str, str]] = Field(default_factory=list)
     exclusion_candidates: list[dict[str, int | str]] = Field(default_factory=list)
     newly_seen_route_families: list[str] = Field(default_factory=list)
+    top_task_edge_page_types: list[dict[str, int | str]] = Field(default_factory=list)
+    strongest_primary_pages: list[dict[str, int | str]] = Field(default_factory=list)
 
 
 class SiteManifest(StrictModel):

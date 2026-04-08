@@ -146,6 +146,8 @@ def build_discovery_summary(
         unknown_pages=manifest.summary.unknown_pages,
         workflow_edge_count=manifest.summary.workflow_edge_count,
         workflow_edge_type_counts=load_workflow_edge_type_counts(run_dir),
+        workflow_edge_weight_counts=load_workflow_edge_counts(run_dir, "edge_weight_counts"),
+        workflow_edge_relevance_counts=load_workflow_edge_counts(run_dir, "edge_relevance_counts"),
         crawl_duration_seconds=(
             manifest.crawl_finished_at - manifest.crawl_started_at
         ).total_seconds(),
@@ -165,6 +167,8 @@ def build_discovery_summary(
         weak_classification_candidates=weak_candidates,
         exclusion_candidates=exclusion_candidates,
         newly_seen_route_families=newly_seen_route_families,
+        top_task_edge_page_types=top_task_edge_page_types(run_dir, pages),
+        strongest_primary_pages=strongest_primary_pages(pages),
     )
 
 
@@ -226,6 +230,11 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
         f"- Crawl duration (seconds): `{summary.crawl_duration_seconds}`",
         f"- Max depth reached: `{summary.max_depth_reached}`",
         "",
+        "## Workflow Signal",
+        "",
+        f"- Edge weights: `{summary.workflow_edge_weight_counts}`",
+        f"- Edge relevance: `{summary.workflow_edge_relevance_counts}`",
+        "",
         "## Top Route Families",
     ]
     for item in summary.top_route_families:
@@ -233,6 +242,20 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
     lines.extend(["", "## Newly Seen Route Families"])
     for family in summary.newly_seen_route_families:
         lines.append(f"- `{family}`")
+    lines.extend(["", "## Top Task Edge Page Types"])
+    if summary.top_task_edge_page_types:
+        for item in summary.top_task_edge_page_types:
+            lines.append(f"- `{item['page_type']}`: {item['task_edge_count']}")
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Strongest Primary Pages"])
+    if summary.strongest_primary_pages:
+        for item in summary.strongest_primary_pages:
+            lines.append(
+                f"- `{item['page_id']}` (`{item['page_type']}`): {item['primary_page_intent']} / {item['task_relevance_score']}"
+            )
+    else:
+        lines.append("- None")
     lines.extend(["", "## Unknown Pages"])
     if summary.unknown_pages_detail:
         for item in summary.unknown_pages_detail:
@@ -258,6 +281,8 @@ def recommended_next_actions(summary: DiscoverySummary) -> list[str]:
         actions.append("Inspect the slowest pages and route families for expensive admin or calendar surfaces.")
     if summary.exclusion_candidates:
         actions.append("Consider whether repeated utility pages should eventually be excluded from large discovery runs.")
+    if summary.workflow_edge_relevance_counts.get("contextual", 0):
+        actions.append("Review low-value contextual edges and generic route families to reduce graph noise.")
     return actions[:5]
 
 
@@ -267,3 +292,47 @@ def load_workflow_edge_type_counts(run_dir: Path) -> dict[str, int]:
         return {}
     raw = json.loads(workflow_path.read_text(encoding="utf-8"))
     return raw.get("edge_type_counts", {})
+
+
+def load_workflow_edge_counts(run_dir: Path, key: str) -> dict[str, int]:
+    workflow_path = run_dir / "workflow-edges.json"
+    if not workflow_path.exists():
+        return {}
+    raw = json.loads(workflow_path.read_text(encoding="utf-8"))
+    return raw.get(key, {})
+
+
+def top_task_edge_page_types(run_dir: Path, pages: list[PageRecord]) -> list[dict[str, int | str]]:
+    workflow_path = run_dir / "workflow-edges.json"
+    if not workflow_path.exists():
+        return []
+    raw = json.loads(workflow_path.read_text(encoding="utf-8"))
+    page_type_by_id = {page.page_id: page.page_type.value for page in pages}
+    counts = Counter(
+        page_type_by_id.get(edge.get("from_page_id"), "unknown")
+        for edge in raw.get("edges", [])
+        if edge.get("edge_relevance") == "task"
+    )
+    return [
+        {"page_type": page_type, "task_edge_count": count}
+        for page_type, count in counts.most_common(5)
+    ]
+
+
+def strongest_primary_pages(pages: list[PageRecord]) -> list[dict[str, int | str]]:
+    ranked_pages = sorted(
+        pages,
+        key=lambda page: (
+            -(page.task_summary.task_relevance_score or 0),
+            page.page_id,
+        ),
+    )[:5]
+    return [
+        {
+            "page_id": page.page_id,
+            "page_type": page.page_type.value,
+            "primary_page_intent": page.task_summary.primary_page_intent.value,
+            "task_relevance_score": page.task_summary.task_relevance_score,
+        }
+        for page in ranked_pages
+    ]

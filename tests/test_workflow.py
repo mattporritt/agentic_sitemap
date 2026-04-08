@@ -1,10 +1,15 @@
 from moodle_sitemap.models import (
     ActionAffordance,
     AffordanceElementType,
+    EdgeRelevance,
+    EdgeWeight,
+    ImportanceLevel,
+    LikelyIntent,
     NavigationItem,
     NextStepHint,
     PageAffordances,
     PageRecord,
+    PageTaskSummary,
     PageType,
     TabAffordance,
     WorkflowEdgeType,
@@ -23,6 +28,7 @@ def make_page(
     breadcrumbs: list[str] | None = None,
     crawl_depth: int = 0,
     title: str | None = None,
+    task_summary: PageTaskSummary | None = None,
 ) -> PageRecord:
     return PageRecord(
         page_id=page_id,
@@ -38,6 +44,7 @@ def make_page(
             navigation=navigation or [],
             tabs=tabs or [],
         ),
+        task_summary=task_summary or PageTaskSummary(),
         discovered_links=[],
         network=[],
         crawl_depth=crawl_depth,
@@ -63,13 +70,18 @@ def test_derive_workflow_graph_links_dashboard_to_course_navigation() -> None:
 
     assert graph.total_edges == 1
     assert graph.edges[0].edge_type == WorkflowEdgeType.NAVIGATION
+    assert graph.edges[0].edge_weight == EdgeWeight.HIGH
+    assert graph.edges[0].edge_relevance == EdgeRelevance.TASK
     assert graph.edges[0].to_page_id == "0002-course"
     assert dashboard.next_steps[0] == NextStepHint(
         page_id="0002-course",
         target_url="https://example.com/course/view.php?id=4",
         edge_type=WorkflowEdgeType.NAVIGATION,
+        edge_weight=EdgeWeight.HIGH,
+        edge_relevance=EdgeRelevance.TASK,
         label="Course 1",
         confidence=0.95,
+        likely_intent=LikelyIntent.NAVIGATE,
         notes="dashboard-to-course",
     )
 
@@ -97,6 +109,8 @@ def test_derive_workflow_graph_detects_preferences_edge() -> None:
 
     assert graph.edges[0].edge_type == WorkflowEdgeType.PREFERENCES
     assert graph.edge_type_counts["preferences"] == 1
+    assert graph.edge_weight_counts["high"] == 1
+    assert graph.edge_relevance_counts["task"] == 1
 
 
 def test_derive_workflow_graph_marks_admin_navigation() -> None:
@@ -138,3 +152,48 @@ def test_derive_workflow_graph_uses_related_fallback_for_discovered_links() -> N
 
     assert graph.edges[0].edge_type == WorkflowEdgeType.RELATED
     assert graph.edges[0].source_affordance_kind == "discovered_link"
+    assert graph.edges[0].edge_weight == EdgeWeight.LOW
+    assert graph.edges[0].edge_relevance == EdgeRelevance.CONTEXTUAL
+
+
+def test_next_steps_prefers_primary_task_edges_over_generic_navigation() -> None:
+    course = make_page(
+        "0001-course",
+        "https://example.com/course/view.php?id=4",
+        page_type=PageType.COURSE_VIEW,
+        actions=[
+            ActionAffordance(
+                label="Edit course settings",
+                url="https://example.com/course/edit.php?id=4",
+                element_type=AffordanceElementType.LINK,
+                importance_level=ImportanceLevel.PRIMARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+        navigation=[
+            NavigationItem(
+                label="Calendar",
+                url="https://example.com/calendar/view.php?view=month",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.NAVIGATE,
+            )
+        ],
+        task_summary=PageTaskSummary(primary_page_intent=LikelyIntent.CONFIGURE, task_relevance_score=80),
+    )
+    edit_page = make_page(
+        "0002-edit",
+        "https://example.com/course/edit.php?id=4",
+        page_type=PageType.COURSE_EDIT,
+    )
+    calendar_page = make_page(
+        "0003-calendar",
+        "https://example.com/calendar/view.php?view=month",
+        page_type=PageType.CALENDAR,
+    )
+
+    derive_workflow_graph([course, edit_page, calendar_page])
+
+    assert course.next_steps[0].page_id == "0002-edit"
+    assert course.next_steps[0].edge_relevance == EdgeRelevance.TASK
+    assert course.next_steps[0].edge_weight == EdgeWeight.HIGH

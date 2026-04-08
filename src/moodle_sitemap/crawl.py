@@ -151,6 +151,7 @@ def crawl_site(
                     body_classes=features.body_classes,
                     breadcrumbs=features.breadcrumbs,
                     affordances=features.affordances,
+                    task_summary=features.task_summary,
                     safety=summarize_page_safety(features.affordances),
                     footer=extract_footer_info(session.page),
                     discovered_links=discovered_links,

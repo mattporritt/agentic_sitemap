@@ -1,5 +1,6 @@
 from moodle_sitemap.extract.dom import (
     build_page_features_from_payload,
+    derive_page_task_summary,
     infer_form_purpose,
     normalize_body_classes,
     normalize_breadcrumbs,
@@ -7,7 +8,7 @@ from moodle_sitemap.extract.dom import (
     normalize_filter_controls,
     normalize_forms,
 )
-from moodle_sitemap.models import FormFieldAffordance, FormPurpose
+from moodle_sitemap.models import FormFieldAffordance, FormPurpose, ImportanceLevel, LikelyIntent, MutationStrength, PageAffordances
 
 
 def test_normalize_body_classes_deduplicates_and_preserves_order() -> None:
@@ -104,7 +105,7 @@ def test_build_page_features_from_payload_tolerates_malformed_form_entries() -> 
     assert features.affordances.forms[0].method == "get"
     assert features.affordances.forms[0].action == "/admin/search.php"
     assert features.affordances.forms[0].fields[0].name == "query"
-    assert features.affordances.forms[0].purpose == FormPurpose.SEARCH_FILTER
+    assert features.affordances.forms[0].purpose == FormPurpose.SEARCH_FORM
 
 
 def test_normalize_actions_adds_safety_hints() -> None:
@@ -148,8 +149,8 @@ def test_infer_form_purpose_distinguishes_search_and_edit_forms() -> None:
         submit_controls=normalize_actions([{"label": "Save changes", "element_type": "submit"}]),
     )
 
-    assert search_purpose == FormPurpose.SEARCH_FILTER
-    assert edit_purpose == FormPurpose.EDIT_SAVE
+    assert search_purpose == FormPurpose.SEARCH_FORM
+    assert edit_purpose == FormPurpose.EDIT_FORM
 
 
 def test_build_page_features_from_payload_extracts_richer_affordances() -> None:
@@ -175,6 +176,7 @@ def test_build_page_features_from_payload_extracts_richer_affordances() -> None:
 
     assert features.affordances.actions[0].action_key == "turn-editing-on"
     assert features.affordances.actions[0].safety.likely_mutating is True
+    assert features.affordances.actions[0].importance_level == ImportanceLevel.PRIMARY
     assert features.affordances.navigation[0].current is True
     assert features.affordances.editors.has_atto is True
     assert features.affordances.file_inputs[0].multiple is True
@@ -183,6 +185,8 @@ def test_build_page_features_from_payload_extracts_richer_affordances() -> None:
     assert features.affordances.tables[0].row_count == 25
     assert features.affordances.lists[0].item_count == 5
     assert features.affordances.sections[0].label == "User accounts"
+    assert features.task_summary.primary_actions == ["Turn editing on"]
+    assert features.task_summary.primary_page_intent == LikelyIntent.EDIT
 
 
 def test_normalize_filter_controls_assigns_search_filter_sort_purposes() -> None:
@@ -195,3 +199,65 @@ def test_normalize_filter_controls_assigns_search_filter_sort_purposes() -> None
     )
 
     assert [control.purpose.value for control in controls] == ["search", "sort", "filter"]
+
+
+def test_normalize_actions_sets_importance_and_intent() -> None:
+    actions = normalize_actions(
+        [
+            {
+                "label": "Save changes",
+                "element_type": "submit",
+                "class_name": "btn btn-primary",
+            },
+            {
+                "label": "More actions",
+                "element_type": "menu_trigger",
+                "class_name": "dropdown-toggle",
+                "data_action": "toggle-menu",
+            },
+        ]
+    )
+
+    assert actions[0].importance_level == ImportanceLevel.PRIMARY
+    assert actions[0].likely_intent == LikelyIntent.SAVE
+    assert actions[0].prominence_score >= 90
+    assert actions[1].in_menu_or_overflow is True
+    assert actions[1].importance_level == ImportanceLevel.SECONDARY
+
+
+def test_normalize_forms_assigns_intent_importance_and_mutation_strength() -> None:
+    forms = normalize_forms(
+        [
+            {
+                "id": "messageform",
+                "method": "post",
+                "action": "/message/index.php",
+                "fields": [{"name": "message", "label": "Message", "field_type": "textarea", "visible": True}],
+                "submit_controls": [{"label": "Send message", "element_type": "submit", "class_name": "btn btn-primary"}],
+            }
+        ]
+    )
+
+    assert forms[0].purpose == FormPurpose.MESSAGE_FORM
+    assert forms[0].likely_intent == LikelyIntent.MESSAGE
+    assert forms[0].importance_level == ImportanceLevel.PRIMARY
+    assert forms[0].likely_mutation_strength == MutationStrength.MEDIUM
+    assert forms[0].central_to_page is True
+
+
+def test_derive_page_task_summary_prefers_high_prominence_actions() -> None:
+    summary = derive_page_task_summary(
+        PageAffordances(
+            actions=normalize_actions(
+                [
+                    {"label": "Save changes", "element_type": "submit", "class_name": "btn btn-primary"},
+                    {"label": "Cancel", "element_type": "link"},
+                ]
+            ),
+            forms=[],
+        )
+    )
+
+    assert summary.primary_page_intent == LikelyIntent.SAVE
+    assert summary.primary_actions[0] == "Save changes"
+    assert summary.task_relevance_score > 0
