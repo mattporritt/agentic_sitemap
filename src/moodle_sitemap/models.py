@@ -68,12 +68,39 @@ class FilterControlPurpose(StrEnum):
     UNKNOWN = "unknown"
 
 
+class WorkflowEdgeType(StrEnum):
+    NAVIGATION = "navigation"
+    PARENT_CHILD = "parent_child"
+    SETTINGS = "settings"
+    EDIT = "edit"
+    PREFERENCES = "preferences"
+    ACTIVITY = "activity"
+    ADMIN = "admin"
+    RELATED = "related"
+
+
+class PageRiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class SafetyHints(StrictModel):
     inspect_only: bool = False
     navigation_safe: bool = False
     likely_mutating: bool = False
     likely_destructive: bool = False
     requires_confirmation_likely: bool = False
+
+
+class PageSafetySummary(StrictModel):
+    page_risk_level: PageRiskLevel = PageRiskLevel.LOW
+    contains_mutating_actions: bool = False
+    contains_destructive_actions: bool = False
+    likely_requires_confirmation: bool = False
+    contains_sesskey_backed_actions: bool = False
+    navigation_safe_action_count: int = 0
+    mutating_action_count: int = 0
 
 
 class ActionAffordance(StrictModel):
@@ -167,6 +194,33 @@ class PageAffordances(StrictModel):
     sections: list[SectionAffordance] = Field(default_factory=list)
 
 
+class WorkflowEdge(StrictModel):
+    from_page_id: str
+    to_page_id: str | None = None
+    target_url: str
+    edge_type: WorkflowEdgeType = WorkflowEdgeType.RELATED
+    source_affordance_label: str | None = None
+    source_affordance_kind: str | None = None
+    confidence: float | None = None
+    notes: str | None = None
+
+
+class NextStepHint(StrictModel):
+    page_id: str | None = None
+    target_url: str
+    edge_type: WorkflowEdgeType = WorkflowEdgeType.RELATED
+    label: str | None = None
+    confidence: float | None = None
+    notes: str | None = None
+
+
+class WorkflowGraph(StrictModel):
+    role_profile: str = "unlabeled"
+    total_edges: int = 0
+    edge_type_counts: dict[str, int] = Field(default_factory=dict)
+    edges: list[WorkflowEdge] = Field(default_factory=list)
+
+
 class FooterDebugInfo(StrictModel):
     raw_text: str | None = None
     generation_time_seconds: float | None = None
@@ -212,6 +266,8 @@ class PageRecord(StrictModel):
     body_classes: list[str] = Field(default_factory=list)
     breadcrumbs: list[str] = Field(default_factory=list)
     affordances: PageAffordances = Field(default_factory=PageAffordances)
+    safety: PageSafetySummary = Field(default_factory=PageSafetySummary)
+    next_steps: list[NextStepHint] = Field(default_factory=list)
     footer: FooterDebugInfo | None = None
     discovered_links: list[str] = Field(default_factory=list)
     network: list[NetworkEvent] = Field(default_factory=list)
@@ -223,6 +279,7 @@ class PageRecord(StrictModel):
 class ManifestSummary(StrictModel):
     total_pages: int
     unknown_pages: int
+    workflow_edge_count: int = 0
     page_type_counts: dict[str, int] = Field(default_factory=dict)
     crawl_started_at: datetime
     crawl_finished_at: datetime
@@ -230,10 +287,13 @@ class ManifestSummary(StrictModel):
 
 class DiscoverySummary(StrictModel):
     site_url: HttpUrl
+    role_profile: str = "unlabeled"
     run_dir: str
     total_pages: int
     unique_normalized_urls: int
     unknown_pages: int
+    workflow_edge_count: int = 0
+    workflow_edge_type_counts: dict[str, int] = Field(default_factory=dict)
     crawl_duration_seconds: float
     max_depth_reached: int
     page_type_counts: dict[str, int] = Field(default_factory=dict)
@@ -249,6 +309,7 @@ class DiscoverySummary(StrictModel):
 
 class SiteManifest(StrictModel):
     site_url: HttpUrl
+    role_profile: str = "unlabeled"
     origin: str
     crawl_started_at: datetime
     crawl_finished_at: datetime
@@ -262,12 +323,14 @@ class SmokeTestConfig(StrictModel):
     site_url: HttpUrl
     username: str
     password: str
+    role_profile: str = "unlabeled"
     browser_engine: BrowserEngine = BrowserEngine.CHROMIUM
     headless: bool = True
 
 
 class SmokeTestRecord(StrictModel):
     site_url: HttpUrl
+    role_profile: str = "unlabeled"
     browser: BrowserEngine
     initial_url: str
     final_url: str
@@ -278,3 +341,20 @@ class SmokeTestRecord(StrictModel):
     breadcrumbs: list[str] = Field(default_factory=list)
     login_succeeded: bool
     captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class RunComparisonSummary(StrictModel):
+    left_run_dir: str
+    right_run_dir: str
+    left_role_profile: str
+    right_role_profile: str
+    left_total_pages: int
+    right_total_pages: int
+    left_workflow_edges: int = 0
+    right_workflow_edges: int = 0
+    page_type_count_deltas: dict[str, dict[str, int]] = Field(default_factory=dict)
+    pages_only_in_left: list[str] = Field(default_factory=list)
+    pages_only_in_right: list[str] = Field(default_factory=list)
+    edge_signatures_only_in_left: list[str] = Field(default_factory=list)
+    edge_signatures_only_in_right: list[str] = Field(default_factory=list)
+    affordance_differences: list[dict[str, object]] = Field(default_factory=list)

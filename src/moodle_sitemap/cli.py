@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from moodle_sitemap.compare_runs import compare_runs
 from moodle_sitemap.crawl import CrawlConfig, crawl_site, format_progress_line
 from moodle_sitemap.discovery import run_discovery
 from moodle_sitemap.smoke import run_smoke_test
@@ -36,6 +37,7 @@ def crawl(
     username: str = typer.Option(..., help="Moodle username."),
     password: str = typer.Option(..., help="Moodle password."),
     output: Path = typer.Option(..., help="Output directory for sitemap artifacts."),
+    role_profile: str = typer.Option("unlabeled", help="Role/profile label for this crawl, for example admin or student."),
     max_pages: int = typer.Option(200, min=1, help="Maximum pages to crawl."),
     headless: str = typer.Option("true", help="Whether to run the browser headless."),
 ) -> None:
@@ -45,6 +47,7 @@ def crawl(
             username=username,
             password=password,
             output_dir=output,
+            role_profile=role_profile,
             max_pages=max_pages,
             headless=parse_bool(headless),
         ),
@@ -128,6 +131,27 @@ def discover(
     typer.echo(
         f"Discovery run wrote {result.summary_path} and crawled "
         f"{result.manifest.visited_pages} pages into {result.run_dir}"
+    )
+
+
+@app.command("compare-runs")
+def compare_runs_command(
+    left: Path = typer.Option(..., help="Path to the left run directory."),
+    right: Path = typer.Option(..., help="Path to the right run directory."),
+    output_root: Path = typer.Option(
+        Path("comparison-runs"),
+        help="Root directory for timestamped run comparisons.",
+    ),
+) -> None:
+    try:
+        result = compare_runs(left_run_dir=left, right_run_dir=right, base_dir=output_root)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(
+        f"Run comparison wrote {result.json_path} and {result.markdown_path} into {result.output_dir}"
     )
 
 

@@ -28,12 +28,14 @@ def load_smoke_config(path: str | Path) -> SmokeTestConfig:
     site = raw.get("site", {})
     auth = raw.get("auth", {})
     browser = raw.get("browser", {})
+    run = raw.get("run", {})
 
     try:
         return SmokeTestConfig(
             site_url=site["url"],
             username=auth["username"],
             password=auth["password"],
+            role_profile=run.get("role", "unlabeled"),
             browser_engine=normalize_browser_engine(browser.get("engine", BrowserEngine.CHROMIUM.value)),
             headless=browser.get("headless", True),
         )

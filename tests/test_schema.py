@@ -6,6 +6,9 @@ from moodle_sitemap.models import (
     ActionAffordance,
     AffordanceElementType,
     BrowserEngine,
+    NextStepHint,
+    PageRiskLevel,
+    PageSafetySummary,
     PageFeatures,
     PageAffordances,
     PageRecord,
@@ -39,6 +42,7 @@ def test_build_smoke_test_record_populates_known_fields() -> None:
     )
 
     assert str(record.site_url) == "https://example.com/"
+    assert record.role_profile == "unlabeled"
     assert record.browser == BrowserEngine.FIREFOX
     assert record.initial_url == "https://example.com/"
     assert record.final_url == "https://example.com/my"
@@ -72,6 +76,7 @@ def test_page_record_serializes_flat_schema_fields() -> None:
                 )
             ]
         ),
+        safety=PageSafetySummary(page_risk_level=PageRiskLevel.MEDIUM, contains_mutating_actions=True),
         discovered_links=[],
         network=[],
     )
@@ -83,6 +88,8 @@ def test_page_record_serializes_flat_schema_fields() -> None:
     assert dumped["body_classes"] == ["path-my", "theme"]
     assert dumped["breadcrumbs"] == ["Dashboard"]
     assert dumped["affordances"]["actions"][0]["action_key"] == "turn-editing-on"
+    assert dumped["safety"]["page_risk_level"] == "medium"
+    assert dumped["next_steps"] == []
     assert "features" not in dumped
 
 
@@ -132,6 +139,7 @@ def test_build_manifest_summary_counts_page_types() -> None:
 
     assert summary.total_pages == 3
     assert summary.unknown_pages == 1
+    assert summary.workflow_edge_count == 0
     assert summary.page_type_counts["dashboard"] == 1
     assert summary.page_type_counts["admin_settings"] == 1
     assert summary.page_type_counts["course_switch_role"] == 0
@@ -141,3 +149,33 @@ def test_build_manifest_summary_counts_page_types() -> None:
     assert summary.page_type_counts["calendar"] == 0
     assert summary.crawl_started_at == started
     assert summary.crawl_finished_at == ended
+
+
+def test_page_record_serializes_next_steps() -> None:
+    page = PageRecord(
+        page_id="0001-my",
+        url="https://example.com/my",
+        normalized_url="https://example.com/my",
+        final_url="https://example.com/my",
+        title="Dashboard",
+        page_type=PageType.DASHBOARD,
+        body_classes=[],
+        breadcrumbs=[],
+        next_steps=[
+            NextStepHint(
+                page_id="0002-course",
+                target_url="https://example.com/course/view.php?id=4",
+                edge_type="navigation",
+                label="Course 1",
+                confidence=0.95,
+                notes="dashboard-to-course",
+            )
+        ],
+        discovered_links=[],
+        network=[],
+    )
+
+    dumped = page.model_dump()
+
+    assert dumped["next_steps"][0]["edge_type"] == "navigation"
+    assert dumped["next_steps"][0]["page_id"] == "0002-course"

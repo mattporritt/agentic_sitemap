@@ -26,6 +26,9 @@ def test_load_smoke_config_reads_expected_values(tmp_path: Path) -> None:
         [browser]
         engine = "firefox"
         headless = false
+
+        [run]
+        role = "teacher"
         """,
     )
 
@@ -34,6 +37,7 @@ def test_load_smoke_config_reads_expected_values(tmp_path: Path) -> None:
     assert str(config.site_url) == "https://example.com/"
     assert config.username == "admin"
     assert config.password == "secret"
+    assert config.role_profile == "teacher"
     assert config.browser_engine == BrowserEngine.FIREFOX
     assert config.headless is False
 
@@ -53,6 +57,7 @@ def test_load_smoke_config_defaults_browser_values(tmp_path: Path) -> None:
 
     config = load_smoke_config(config_path)
 
+    assert config.role_profile == "unlabeled"
     assert config.browser_engine == BrowserEngine.CHROMIUM
     assert config.headless is True
 

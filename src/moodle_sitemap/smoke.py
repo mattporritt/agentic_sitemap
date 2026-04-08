@@ -55,6 +55,7 @@ def build_smoke_test_record(
 ) -> SmokeTestRecord:
     return SmokeTestRecord(
         site_url=config.site_url,
+        role_profile=config.role_profile,
         browser=config.browser_engine,
         initial_url=str(config.site_url),
         final_url=login_result.final_url,

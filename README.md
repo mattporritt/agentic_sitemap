@@ -25,6 +25,7 @@ Phase 1 currently does the following:
 - normalizes and de-duplicates visited URLs
 - stores a stable `normalized_url` per page record for canonical destination handling
 - captures page metadata, discovered links, body classes, breadcrumbs, richer page affordances, and lightweight network activity
+- emits a lightweight workflow edge layer between visited pages
 - captures Moodle footer performance or debug information when present
 - writes a top-level `sitemap.json` plus one JSON file per page
 - classifies pages into a small Moodle-aware set of page types
@@ -162,6 +163,9 @@ password = "secret"
 [browser]
 engine = "chromium"
 headless = true
+
+[run]
+role = "admin"
 ```
 
 Run the smoke test:
@@ -177,6 +181,7 @@ What this proves:
 - the crawler can reach the Moodle site
 - login succeeds with the supplied credentials
 - the tool can capture minimal post-login page metadata
+- the run can be labeled with a role/profile such as `admin`, `teacher`, or `student`
 
 Expected output:
 
@@ -208,6 +213,7 @@ verification-runs/
   2026-04-07T101530Z/
     smoke-test.json
     sitemap.json
+    workflow-edges.json
     pages/
       0001-my.json
       ...
@@ -244,6 +250,7 @@ Example output:
 discovery-runs/
   2026-04-08T110000Z/
     sitemap.json
+    workflow-edges.json
     discovery-summary.json
     discovery-summary.md
     pages/
@@ -280,6 +287,38 @@ moodle-sitemap crawl \
   --headless true
 ```
 
+### Compare runs
+
+Compare two saved crawl or discovery runs:
+
+```bash
+moodle-sitemap compare-runs \
+  --left ./discovery-runs/2026-04-08T014634Z \
+  --right ./discovery-runs/2026-04-08T014428Z
+```
+
+This writes a timestamped comparison artifact under `comparison-runs/` with:
+
+- `role-compare.json`
+- `role-compare.md`
+
+Example output:
+
+```text
+comparison-runs/
+  2026-04-08T150000Z/
+    role-compare.json
+    role-compare.md
+```
+
+The comparison focuses on:
+
+- page counts
+- page-type count deltas
+- pages visible in one run but not the other
+- workflow edges visible in one run but not the other
+- high-signal action differences on shared pages
+
 ## Output layout
 
 Example output:
@@ -288,6 +327,7 @@ Example output:
 output/
   smoke-test.json
   sitemap.json
+  workflow-edges.json
   pages/
     0001-root.json
     0002-course-view-id-2.json
@@ -300,6 +340,7 @@ Discovery runs also include:
 
 - `discovery-summary.json` for machine-readable post-run analysis
 - `discovery-summary.md` for a short human-readable review
+- `workflow-edges.json` for page-to-page workflow relationships
 
 `smoke-test.json` contains a single post-login checkpoint record with `site_url`, `browser`, URLs before and after login, title, status when available, body metadata, breadcrumbs, timestamp, and `login_succeeded`.
 
@@ -308,6 +349,7 @@ Example `smoke-test.json` shape:
 ```json
 {
   "site_url": "https://example.com/",
+  "role_profile": "admin",
   "browser": "chromium",
   "initial_url": "https://example.com/",
   "final_url": "https://example.com/my",
@@ -328,6 +370,7 @@ Each crawled page record includes:
 - `final_url`: the final browser URL after navigation
 - `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
 - `affordances`: structured agent-usable UI understanding without interaction
+- `next_steps`: compact likely next-page candidates derived from the workflow edge layer
 
 ### Manifest summary
 
@@ -335,6 +378,7 @@ Each crawled page record includes:
 
 - `total_pages`
 - `unknown_pages`
+- `workflow_edge_count`
 - `page_type_counts`
 - `crawl_started_at`
 - `crawl_finished_at`
@@ -370,6 +414,7 @@ Each page record includes:
 - final URL and requested URL
 - page title
 - page type
+- role-aware safety metadata
 - referrer
 - HTTP status when Playwright exposes it
 - body id and classes
@@ -377,9 +422,36 @@ Each page record includes:
 - affordances for actions, navigation, forms, editors, file inputs, filters, tabs, tables, lists, and sections
 - discovered links
 - conservative safety hints on actions and forms
+- next-step hints derived from page-to-page workflow edges
 - Moodle footer or debug details when present
 - raw footer text plus conservative structured parsing for current Moodle performance strings when available
 - redacted network activity observed during page load
+
+### Workflow edges
+
+The crawler also writes `workflow-edges.json`, which captures likely page-to-page relationships such as:
+
+- dashboard to course navigation
+- course pages to related pages or activities
+- preference pages to more specific preference pages
+- admin pages to deeper admin pages
+
+This is different from raw discovered links:
+
+- discovered links are just URLs found on a page
+- workflow edges are filtered, typed relationships between visited pages
+- edges include the source affordance label or kind when known
+
+Edge types stay intentionally small:
+
+- `navigation`
+- `parent_child`
+- `settings`
+- `edit`
+- `preferences`
+- `activity`
+- `admin`
+- `related`
 
 ### Affordance safety hints
 
@@ -393,6 +465,18 @@ Action and form affordances include conservative heuristic safety hints:
 
 These are hints, not guarantees. They are meant to help downstream tools reason about risk without clicking anything.
 
+### Page safety metadata
+
+Each page record also includes a page-level `safety` summary with heuristics such as:
+
+- `page_risk_level`
+- `contains_mutating_actions`
+- `contains_destructive_actions`
+- `likely_requires_confirmation`
+- `contains_sesskey_backed_actions`
+
+These aggregate the action and form hints into a simpler page-wide view. They are still heuristics, not hard guarantees.
+
 Example page record shape:
 
 ```json
@@ -403,9 +487,28 @@ Example page record shape:
   "final_url": "https://example.com/my",
   "title": "Dashboard | Moodle Demo",
   "page_type": "dashboard",
+  "safety": {
+    "page_risk_level": "medium",
+    "contains_mutating_actions": true,
+    "contains_destructive_actions": false,
+    "likely_requires_confirmation": false,
+    "contains_sesskey_backed_actions": true,
+    "navigation_safe_action_count": 12,
+    "mutating_action_count": 1
+  },
   "body_id": "page-my-index",
   "body_classes": ["path-my", "pagelayout-mydashboard"],
   "breadcrumbs": [],
+  "next_steps": [
+    {
+      "page_id": "0016-course-view-php-id-4",
+      "target_url": "https://example.com/course/view.php?id=4",
+      "edge_type": "navigation",
+      "label": "Course 1",
+      "confidence": 0.95,
+      "notes": "dashboard-to-course"
+    }
+  ],
   "affordances": {
     "actions": [
       {

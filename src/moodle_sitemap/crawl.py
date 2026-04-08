@@ -24,7 +24,9 @@ from moodle_sitemap.extract.dom import extract_anchor_hrefs, extract_page_featur
 from moodle_sitemap.extract.footer import extract_footer_info
 from moodle_sitemap.extract.network import NetworkRecorder
 from moodle_sitemap.models import BrowserEngine, ManifestSummary, PageRecord, PageType, SiteManifest
+from moodle_sitemap.safety import summarize_page_safety
 from moodle_sitemap.storage.json_store import JsonStore
+from moodle_sitemap.workflow import derive_workflow_graph
 
 
 @dataclass(slots=True)
@@ -33,6 +35,7 @@ class CrawlConfig:
     username: str
     password: str
     output_dir: Path
+    role_profile: str = "unlabeled"
     max_pages: int = 200
     max_depth: int | None = None
     headless: bool = True
@@ -148,6 +151,7 @@ def crawl_site(
                     body_classes=features.body_classes,
                     breadcrumbs=features.breadcrumbs,
                     affordances=features.affordances,
+                    safety=summarize_page_safety(features.affordances),
                     footer=extract_footer_info(session.page),
                     discovered_links=discovered_links,
                     network=list(recorder.events),
@@ -172,8 +176,12 @@ def crawl_site(
             recorder.detach()
 
     crawl_finished_at = datetime.now(timezone.utc)
+    workflow_graph = derive_workflow_graph(page_records, role_profile=config.role_profile)
+    for page_record in page_records:
+        store.write_page(page_record)
     manifest = SiteManifest(
         site_url=start_url,
+        role_profile=config.role_profile,
         origin=origin,
         crawl_started_at=crawl_started_at,
         crawl_finished_at=crawl_finished_at,
@@ -181,12 +189,14 @@ def crawl_site(
         visited_pages=len(page_records),
         summary=build_manifest_summary(
             page_records,
+            workflow_edge_count=workflow_graph.total_edges,
             crawl_started_at=crawl_started_at,
             crawl_finished_at=crawl_finished_at,
         ),
         pages=page_records,
     )
     store.write_manifest(manifest)
+    store.write_workflow_graph(workflow_graph)
     return manifest
 
 
@@ -202,6 +212,7 @@ def format_progress_line(page: PageRecord, *, current_count: int, max_pages: int
 def build_manifest_summary(
     pages: list[PageRecord],
     *,
+    workflow_edge_count: int = 0,
     crawl_started_at: datetime,
     crawl_finished_at: datetime,
 ) -> ManifestSummary:
@@ -212,6 +223,7 @@ def build_manifest_summary(
     return ManifestSummary(
         total_pages=len(pages),
         unknown_pages=page_type_counts[PageType.UNKNOWN.value],
+        workflow_edge_count=workflow_edge_count,
         page_type_counts=page_type_counts,
         crawl_started_at=crawl_started_at,
         crawl_finished_at=crawl_finished_at,

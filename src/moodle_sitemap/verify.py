@@ -39,6 +39,7 @@ def run_verification(
             username=config.username,
             password=config.password,
             output_dir=run_dir,
+            role_profile=config.role_profile,
             max_pages=max_pages,
             headless=config.headless,
             browser_engine=config.browser_engine,

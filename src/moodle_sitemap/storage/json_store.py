@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from moodle_sitemap.models import PageRecord, SiteManifest
+from moodle_sitemap.models import PageRecord, SiteManifest, WorkflowGraph
 
 
 class JsonStore:
@@ -23,3 +23,8 @@ class JsonStore:
         manifest_path = self.output_dir / "sitemap.json"
         manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
         return manifest_path
+
+    def write_workflow_graph(self, workflow_graph: WorkflowGraph) -> Path:
+        workflow_path = self.output_dir / "workflow-edges.json"
+        workflow_path.write_text(workflow_graph.model_dump_json(indent=2), encoding="utf-8")
+        return workflow_path

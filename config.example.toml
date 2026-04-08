@@ -8,3 +8,6 @@ password = "replace-me"
 [browser]
 engine = "chromium"
 headless = true
+
+[run]
+role = "admin"

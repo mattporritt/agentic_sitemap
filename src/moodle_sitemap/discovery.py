@@ -45,6 +45,7 @@ def run_discovery(
             username=config.username,
             password=config.password,
             output_dir=run_dir,
+            role_profile=config.role_profile,
             max_pages=max_pages,
             max_depth=max_depth,
             headless=config.headless,
@@ -138,10 +139,13 @@ def build_discovery_summary(
 
     return DiscoverySummary(
         site_url=manifest.site_url,
+        role_profile=manifest.role_profile,
         run_dir=str(run_dir),
         total_pages=manifest.visited_pages,
         unique_normalized_urls=len({page.normalized_url for page in pages}),
         unknown_pages=manifest.summary.unknown_pages,
+        workflow_edge_count=manifest.summary.workflow_edge_count,
+        workflow_edge_type_counts=load_workflow_edge_type_counts(run_dir),
         crawl_duration_seconds=(
             manifest.crawl_finished_at - manifest.crawl_started_at
         ).total_seconds(),
@@ -218,6 +222,7 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
         f"- Total pages: `{summary.total_pages}`",
         f"- Unique normalized URLs: `{summary.unique_normalized_urls}`",
         f"- Unknown pages: `{summary.unknown_pages}`",
+        f"- Workflow edges: `{summary.workflow_edge_count}`",
         f"- Crawl duration (seconds): `{summary.crawl_duration_seconds}`",
         f"- Max depth reached: `{summary.max_depth_reached}`",
         "",
@@ -254,3 +259,11 @@ def recommended_next_actions(summary: DiscoverySummary) -> list[str]:
     if summary.exclusion_candidates:
         actions.append("Consider whether repeated utility pages should eventually be excluded from large discovery runs.")
     return actions[:5]
+
+
+def load_workflow_edge_type_counts(run_dir: Path) -> dict[str, int]:
+    workflow_path = run_dir / "workflow-edges.json"
+    if not workflow_path.exists():
+        return {}
+    raw = json.loads(workflow_path.read_text(encoding="utf-8"))
+    return raw.get("edge_type_counts", {})
