@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from moodle_sitemap.discovery import (
@@ -6,8 +7,9 @@ from moodle_sitemap.discovery import (
     recommended_next_actions,
     route_family,
     route_signature,
+    load_optional_manifest,
 )
-from moodle_sitemap.models import EditorSummary, PageRecord, PageType, SiteManifest
+from moodle_sitemap.models import PageAffordances, PageRecord, PageType, SiteManifest
 
 
 def make_page(
@@ -27,10 +29,6 @@ def make_page(
         page_type=page_type,
         body_classes=[],
         breadcrumbs=[],
-        forms=[],
-        editors=EditorSummary(),
-        links=[],
-        buttons=[],
         discovered_links=[],
         network=[],
         load_duration_seconds=load_duration_seconds,
@@ -137,3 +135,52 @@ def test_recommended_next_actions_returns_human_useful_items() -> None:
     )
     actions = recommended_next_actions(summary)
     assert actions
+
+
+def test_load_optional_manifest_tolerates_legacy_page_fields(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sitemap.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "site_url": "https://example.com/",
+                "origin": "https://example.com",
+                "crawl_started_at": "2026-04-08T10:00:00Z",
+                "crawl_finished_at": "2026-04-08T10:00:30Z",
+                "max_pages": 5,
+                "visited_pages": 1,
+                "summary": {
+                    "total_pages": 1,
+                    "unknown_pages": 0,
+                    "page_type_counts": {page_type.value: (1 if page_type == PageType.DASHBOARD else 0) for page_type in PageType},
+                    "crawl_started_at": "2026-04-08T10:00:00Z",
+                    "crawl_finished_at": "2026-04-08T10:00:30Z",
+                },
+                "pages": [
+                    {
+                        "page_id": "0001-my",
+                        "url": "https://example.com/",
+                        "normalized_url": "https://example.com/my",
+                        "final_url": "https://example.com/my",
+                        "title": "Dashboard",
+                        "page_type": "dashboard",
+                        "body_id": "page-my-index",
+                        "body_classes": ["path-my"],
+                        "breadcrumbs": [],
+                        "forms": [],
+                        "editors": {"has_tinymce": False, "has_atto": False, "has_textarea": True},
+                        "links": [],
+                        "buttons": [],
+                        "discovered_links": [],
+                        "network": [],
+                        "captured_at": "2026-04-08T10:00:15Z",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_optional_manifest(manifest_path)
+
+    assert manifest is not None
+    assert manifest.pages[0].affordances == PageAffordances()

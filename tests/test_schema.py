@@ -3,11 +3,14 @@ from datetime import datetime, timezone
 from moodle_sitemap.auth import LoginResult
 from moodle_sitemap.crawl import build_manifest_summary
 from moodle_sitemap.models import (
+    ActionAffordance,
+    AffordanceElementType,
     BrowserEngine,
-    EditorSummary,
     PageFeatures,
+    PageAffordances,
     PageRecord,
     PageType,
+    SafetyHints,
     SmokeTestConfig,
 )
 from moodle_sitemap.smoke import build_smoke_test_record
@@ -25,10 +28,6 @@ def test_build_smoke_test_record_populates_known_fields() -> None:
         body_id="page-my-index",
         body_classes=["path-my", "theme"],
         breadcrumbs=["Dashboard"],
-        forms=[],
-        editors=EditorSummary(),
-        links=[],
-        buttons=[],
     )
 
     record = build_smoke_test_record(
@@ -63,10 +62,16 @@ def test_page_record_serializes_flat_schema_fields() -> None:
         body_id="page-my-index",
         body_classes=["path-my", "theme"],
         breadcrumbs=["Dashboard"],
-        forms=[],
-        editors=EditorSummary(),
-        links=[],
-        buttons=[],
+        affordances=PageAffordances(
+            actions=[
+                ActionAffordance(
+                    label="Turn editing on",
+                    element_type=AffordanceElementType.BUTTON,
+                    action_key="turn-editing-on",
+                    safety=SafetyHints(likely_mutating=True),
+                )
+            ]
+        ),
         discovered_links=[],
         network=[],
     )
@@ -77,7 +82,7 @@ def test_page_record_serializes_flat_schema_fields() -> None:
     assert dumped["body_id"] == "page-my-index"
     assert dumped["body_classes"] == ["path-my", "theme"]
     assert dumped["breadcrumbs"] == ["Dashboard"]
-    assert dumped["forms"] == []
+    assert dumped["affordances"]["actions"][0]["action_key"] == "turn-editing-on"
     assert "features" not in dumped
 
 
@@ -94,10 +99,6 @@ def test_build_manifest_summary_counts_page_types() -> None:
             page_type=PageType.DASHBOARD,
             body_classes=[],
             breadcrumbs=[],
-            forms=[],
-            editors=EditorSummary(),
-            links=[],
-            buttons=[],
             discovered_links=[],
             network=[],
         ),
@@ -110,10 +111,6 @@ def test_build_manifest_summary_counts_page_types() -> None:
             page_type=PageType.ADMIN_SETTINGS,
             body_classes=[],
             breadcrumbs=[],
-            forms=[],
-            editors=EditorSummary(),
-            links=[],
-            buttons=[],
             discovered_links=[],
             network=[],
         ),
@@ -126,10 +123,6 @@ def test_build_manifest_summary_counts_page_types() -> None:
             page_type=PageType.UNKNOWN,
             body_classes=[],
             breadcrumbs=[],
-            forms=[],
-            editors=EditorSummary(),
-            links=[],
-            buttons=[],
             discovered_links=[],
             network=[],
         ),

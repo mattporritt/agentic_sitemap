@@ -24,7 +24,7 @@ Phase 1 currently does the following:
 - avoids form submission
 - normalizes and de-duplicates visited URLs
 - stores a stable `normalized_url` per page record for canonical destination handling
-- captures page metadata, discovered links, body classes, breadcrumbs, forms, editor presence, labels, and lightweight network activity
+- captures page metadata, discovered links, body classes, breadcrumbs, richer page affordances, and lightweight network activity
 - captures Moodle footer performance or debug information when present
 - writes a top-level `sitemap.json` plus one JSON file per page
 - classifies pages into a small Moodle-aware set of page types
@@ -327,6 +327,7 @@ Each crawled page record includes:
 - `url`: the requested URL
 - `final_url`: the final browser URL after navigation
 - `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
+- `affordances`: structured agent-usable UI understanding without interaction
 
 ### Manifest summary
 
@@ -373,15 +374,24 @@ Each page record includes:
 - HTTP status when Playwright exposes it
 - body id and classes
 - breadcrumbs
-- forms
-- editors
-- visible links
-- visible buttons
+- affordances for actions, navigation, forms, editors, file inputs, filters, tabs, tables, lists, and sections
 - discovered links
-- forms with method, action, and field names
+- conservative safety hints on actions and forms
 - Moodle footer or debug details when present
 - raw footer text plus conservative structured parsing for current Moodle performance strings when available
 - redacted network activity observed during page load
+
+### Affordance safety hints
+
+Action and form affordances include conservative heuristic safety hints:
+
+- `inspect_only`: appears suitable for read-only inspection or navigation
+- `navigation_safe`: looks like non-mutating navigation
+- `likely_mutating`: looks likely to change site state
+- `likely_destructive`: looks likely to delete, remove, purge, or otherwise destructively mutate state
+- `requires_confirmation_likely`: looks likely to trigger a confirmation step
+
+These are hints, not guarantees. They are meant to help downstream tools reason about risk without clicking anything.
 
 Example page record shape:
 
@@ -396,14 +406,62 @@ Example page record shape:
   "body_id": "page-my-index",
   "body_classes": ["path-my", "pagelayout-mydashboard"],
   "breadcrumbs": [],
-  "forms": [],
-  "editors": {
-    "has_tinymce": false,
-    "has_atto": false,
-    "has_textarea": true
+  "affordances": {
+    "actions": [
+      {
+        "label": "Turn editing on",
+        "url": null,
+        "element_type": "button",
+        "action_key": "turn-editing-on",
+        "is_primary": true,
+        "disabled": false,
+        "safety": {
+          "inspect_only": false,
+          "navigation_safe": false,
+          "likely_mutating": true,
+          "likely_destructive": false,
+          "requires_confirmation_likely": false
+        }
+      }
+    ],
+    "navigation": [],
+    "forms": [
+      {
+        "id": null,
+        "method": "post",
+        "action": "https://example.com/editmode.php",
+        "fields": [
+          {
+            "name": "setmode",
+            "label": "Turn editing on",
+            "field_type": "hidden",
+            "visible": false,
+            "required": false
+          }
+        ],
+        "submit_controls": [],
+        "purpose": "edit_save",
+        "safety": {
+          "inspect_only": false,
+          "navigation_safe": false,
+          "likely_mutating": true,
+          "likely_destructive": false,
+          "requires_confirmation_likely": false
+        }
+      }
+    ],
+    "editors": {
+      "has_tinymce": false,
+      "has_atto": false,
+      "has_textarea": true
+    },
+    "file_inputs": [],
+    "filters": [],
+    "tabs": [],
+    "tables": [],
+    "lists": [],
+    "sections": []
   },
-  "links": [],
-  "buttons": [],
   "footer": null,
   "discovered_links": [],
   "network": []

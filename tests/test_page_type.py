@@ -1,5 +1,5 @@
 from moodle_sitemap.classify.page_type import classify_page
-from moodle_sitemap.models import EditorSummary, PageFeatures, PageType
+from moodle_sitemap.models import PageFeatures, PageType
 
 
 def make_features(
@@ -12,10 +12,6 @@ def make_features(
         body_id=body_id,
         body_classes=body_classes or [],
         breadcrumbs=breadcrumbs or [],
-        forms=[],
-        editors=EditorSummary(),
-        links=[],
-        buttons=[],
     )
 
 

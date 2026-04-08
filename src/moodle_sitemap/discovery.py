@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
 
@@ -198,7 +199,14 @@ def load_optional_manifest(path: str | Path | None) -> SiteManifest | None:
     manifest_path = Path(path)
     if not manifest_path.exists():
         return None
-    return SiteManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
+    raw_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for page in raw_data.get("pages", []):
+        if isinstance(page, dict):
+            page.pop("forms", None)
+            page.pop("editors", None)
+            page.pop("links", None)
+            page.pop("buttons", None)
+    return SiteManifest.model_validate(raw_data)
 
 
 def render_discovery_markdown(summary: DiscoverySummary) -> str:

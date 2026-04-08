@@ -36,11 +36,72 @@ class BrowserEngine(StrEnum):
     FIREFOX = "firefox"
 
 
-class FormSummary(StrictModel):
+class AffordanceElementType(StrEnum):
+    LINK = "link"
+    BUTTON = "button"
+    SUBMIT = "submit"
+    MENU_TRIGGER = "menu_trigger"
+    TAB = "tab"
+
+
+class FormFieldType(StrEnum):
+    TEXT = "text"
+    TEXTAREA = "textarea"
+    SELECT = "select"
+    CHECKBOX = "checkbox"
+    RADIO = "radio"
+    HIDDEN = "hidden"
+    FILE = "file"
+    OTHER = "other"
+
+
+class FormPurpose(StrEnum):
+    SEARCH_FILTER = "search_filter"
+    EDIT_SAVE = "edit_save"
+    UNKNOWN = "unknown"
+
+
+class FilterControlPurpose(StrEnum):
+    SEARCH = "search"
+    FILTER = "filter"
+    SORT = "sort"
+    UNKNOWN = "unknown"
+
+
+class SafetyHints(StrictModel):
+    inspect_only: bool = False
+    navigation_safe: bool = False
+    likely_mutating: bool = False
+    likely_destructive: bool = False
+    requires_confirmation_likely: bool = False
+
+
+class ActionAffordance(StrictModel):
+    label: str
+    url: str | None = None
+    element_type: AffordanceElementType = AffordanceElementType.LINK
+    action_key: str | None = None
+    is_primary: bool = False
+    disabled: bool = False
+    safety: SafetyHints = Field(default_factory=SafetyHints)
+
+
+class FormFieldAffordance(StrictModel):
+    name: str | None = None
+    label: str | None = None
+    field_type: FormFieldType = FormFieldType.OTHER
+    visible: bool = True
+    required: bool = False
+
+
+class FormAffordance(StrictModel):
     id: str | None = None
     method: str | None = None
     action: str | None = None
-    field_names: list[str] = Field(default_factory=list)
+    fields: list[FormFieldAffordance] = Field(default_factory=list)
+    submit_controls: list[ActionAffordance] = Field(default_factory=list)
+    purpose: FormPurpose = FormPurpose.UNKNOWN
+    safety: SafetyHints = Field(default_factory=SafetyHints)
 
 
 class EditorSummary(StrictModel):
@@ -49,9 +110,61 @@ class EditorSummary(StrictModel):
     has_textarea: bool = False
 
 
-class LabelledElement(StrictModel):
+class NavigationItem(StrictModel):
     label: str
     url: str | None = None
+    kind: str | None = None
+    current: bool = False
+
+
+class TabAffordance(StrictModel):
+    label: str
+    url: str | None = None
+    current: bool = False
+
+
+class FileInputAffordance(StrictModel):
+    name: str | None = None
+    label: str | None = None
+    accept: str | None = None
+    multiple: bool = False
+
+
+class FilterControlAffordance(StrictModel):
+    name: str | None = None
+    label: str | None = None
+    control_type: FormFieldType = FormFieldType.OTHER
+    purpose: FilterControlPurpose = FilterControlPurpose.UNKNOWN
+
+
+class TableAffordance(StrictModel):
+    region_label: str | None = None
+    column_headers: list[str] = Field(default_factory=list)
+    row_count: int = 0
+
+
+class ListRegionAffordance(StrictModel):
+    region_label: str | None = None
+    item_count: int = 0
+    list_type: str | None = None
+
+
+class SectionAffordance(StrictModel):
+    label: str
+    kind: str | None = None
+
+
+class PageAffordances(StrictModel):
+    actions: list[ActionAffordance] = Field(default_factory=list)
+    navigation: list[NavigationItem] = Field(default_factory=list)
+    forms: list[FormAffordance] = Field(default_factory=list)
+    editors: EditorSummary = Field(default_factory=EditorSummary)
+    file_inputs: list[FileInputAffordance] = Field(default_factory=list)
+    filters: list[FilterControlAffordance] = Field(default_factory=list)
+    tabs: list[TabAffordance] = Field(default_factory=list)
+    tables: list[TableAffordance] = Field(default_factory=list)
+    lists: list[ListRegionAffordance] = Field(default_factory=list)
+    sections: list[SectionAffordance] = Field(default_factory=list)
 
 
 class FooterDebugInfo(StrictModel):
@@ -83,10 +196,7 @@ class PageFeatures(StrictModel):
     body_id: str | None = None
     body_classes: list[str] = Field(default_factory=list)
     breadcrumbs: list[str] = Field(default_factory=list)
-    forms: list[FormSummary] = Field(default_factory=list)
-    editors: EditorSummary = Field(default_factory=EditorSummary)
-    links: list[LabelledElement] = Field(default_factory=list)
-    buttons: list[LabelledElement] = Field(default_factory=list)
+    affordances: PageAffordances = Field(default_factory=PageAffordances)
 
 
 class PageRecord(StrictModel):
@@ -101,10 +211,7 @@ class PageRecord(StrictModel):
     body_id: str | None = None
     body_classes: list[str] = Field(default_factory=list)
     breadcrumbs: list[str] = Field(default_factory=list)
-    forms: list[FormSummary] = Field(default_factory=list)
-    editors: EditorSummary = Field(default_factory=EditorSummary)
-    links: list[LabelledElement] = Field(default_factory=list)
-    buttons: list[LabelledElement] = Field(default_factory=list)
+    affordances: PageAffordances = Field(default_factory=PageAffordances)
     footer: FooterDebugInfo | None = None
     discovered_links: list[str] = Field(default_factory=list)
     network: list[NetworkEvent] = Field(default_factory=list)

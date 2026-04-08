@@ -1,5 +1,5 @@
 from moodle_sitemap.crawl import CrawlVisitIndex, format_progress_line
-from moodle_sitemap.models import EditorSummary, PageRecord, PageType
+from moodle_sitemap.models import PageRecord, PageType
 
 
 def test_crawl_visit_index_prevents_duplicate_dashboard_after_root_redirect() -> None:
@@ -33,10 +33,6 @@ def test_format_progress_line_includes_count_page_id_type_and_url() -> None:
         page_type=PageType.COURSE_VIEW,
         body_classes=[],
         breadcrumbs=[],
-        forms=[],
-        editors=EditorSummary(),
-        links=[],
-        buttons=[],
         discovered_links=[],
         network=[],
     )
