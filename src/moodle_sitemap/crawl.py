@@ -20,7 +20,7 @@ from moodle_sitemap.discover import (
     normalize_url,
     same_origin,
 )
-from moodle_sitemap.extract.dom import extract_anchor_hrefs, extract_page_features
+from moodle_sitemap.extract.dom import extract_anchor_hrefs, extract_page_features, refine_task_summary_for_page_type
 from moodle_sitemap.extract.footer import extract_footer_info
 from moodle_sitemap.extract.network import NetworkRecorder
 from moodle_sitemap.models import BrowserEngine, ManifestSummary, PageRecord, PageType, SiteManifest
@@ -138,20 +138,21 @@ def crawl_site(
                     origin=origin,
                 )
 
+                page_type = classify_page(normalized_url, features)
                 page_record = PageRecord(
                     page_id=make_page_id(len(page_records) + 1, normalized_url),
                     url=target_url,
                     normalized_url=normalized_url,
                     final_url=final_url,
                     title=session.page.title(),
-                    page_type=classify_page(normalized_url, features),
+                    page_type=page_type,
                     referrer=referrer,
                     http_status=response.status if response else None,
                     body_id=features.body_id,
                     body_classes=features.body_classes,
                     breadcrumbs=features.breadcrumbs,
                     affordances=features.affordances,
-                    task_summary=features.task_summary,
+                    task_summary=refine_task_summary_for_page_type(page_type, features.task_summary),
                     safety=summarize_page_safety(features.affordances),
                     footer=extract_footer_info(session.page),
                     discovered_links=discovered_links,

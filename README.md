@@ -374,7 +374,7 @@ Each crawled page record includes:
 - `final_url`: the final browser URL after navigation
 - `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
 - `affordances`: structured agent-usable UI understanding without interaction
-- `task_summary`: compact page-purpose hints derived from the strongest visible affordances
+- `task_summary`: compact page-purpose hints derived from the strongest visible affordances and page context
 - `next_steps`: compact likely next-page candidates derived from the workflow edge layer
 
 ### Manifest summary
@@ -482,6 +482,7 @@ The important distinction is:
 - raw discovered links tell you that one page referenced another URL
 - workflow edges tell you that a visible page control likely leads to another visited page
 - weighted workflow edges help you focus on likely task progression instead of every navigational hop
+- weaker fallback edges are suppressed when a stronger explicit path already exists between the same two pages
 
 ### Affordance importance and likely intent
 
@@ -493,6 +494,20 @@ Action, navigation, and form affordances now include lightweight importance and 
 - `central_to_page` and `likely_mutation_strength` on forms
 
 These are deterministic heuristics based on visible labels, classes, button types, form structure, and route shape. They are meant to improve agent reasoning, not replace human review.
+
+### Primary page intent
+
+Each page record includes a `task_summary.primary_page_intent` hint. This is a compact best-effort signal for what the page is mainly for, using cues such as:
+
+- page type
+- prominent actions
+- dominant form purpose
+- navigation and tab context
+- title, body id, and breadcrumb hints
+
+Typical values include `navigate`, `configure`, `edit`, `search`, `message`, `report`, `upload`, `view`, or `unknown`.
+
+This value is used to make `next_steps` cleaner and more task-aligned. It is still heuristic, not a guarantee.
 
 ### Affordance safety hints
 

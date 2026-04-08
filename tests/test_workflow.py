@@ -240,3 +240,130 @@ def test_admin_search_prefers_specific_setting_page_over_broad_admin_category() 
     assert admin_search.next_steps[0].page_id == "0002-admin-setting"
     assert admin_search.next_steps[0].edge_weight == EdgeWeight.HIGH
     assert admin_search.next_steps[0].edge_relevance == EdgeRelevance.TASK
+
+
+def test_stronger_explicit_edge_prunes_weaker_discovered_link_duplicate() -> None:
+    source = make_page(
+        "0001-admin-search",
+        "https://example.com/admin/search.php",
+        page_type=PageType.ADMIN_SEARCH,
+        navigation=[
+            NavigationItem(
+                label="AI providers",
+                url="https://example.com/admin/settings.php?section=aiprovider",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+    )
+    source.discovered_links = ["https://example.com/admin/settings.php?section=aiprovider"]
+    target = make_page(
+        "0002-admin-setting",
+        "https://example.com/admin/settings.php?section=aiprovider",
+        page_type=PageType.ADMIN_SETTING_PAGE,
+    )
+
+    graph = derive_workflow_graph([source, target])
+
+    assert graph.candidate_edge_count == 1
+    assert graph.total_edges == 1
+    assert graph.suppressed_edge_count == 0
+    assert graph.edges[0].source_affordance_kind == "navigation"
+    assert graph.edges[0].edge_relevance == EdgeRelevance.TASK
+
+
+def test_same_source_target_pair_keeps_stronger_edge_only() -> None:
+    source = make_page(
+        "0001-course",
+        "https://example.com/course/view.php?id=4",
+        page_type=PageType.COURSE_VIEW,
+        actions=[
+            ActionAffordance(
+                label="Edit settings",
+                url="https://example.com/course/edit.php?id=4",
+                element_type=AffordanceElementType.LINK,
+                importance_level=ImportanceLevel.PRIMARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+        navigation=[
+            NavigationItem(
+                label="Settings",
+                url="https://example.com/course/edit.php?id=4",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.NAVIGATE,
+            )
+        ],
+    )
+    target = make_page(
+        "0002-edit",
+        "https://example.com/course/edit.php?id=4",
+        page_type=PageType.COURSE_EDIT,
+    )
+
+    graph = derive_workflow_graph([source, target])
+
+    assert graph.candidate_edge_count == 2
+    assert graph.total_edges == 1
+    assert graph.suppressed_edge_count == 1
+    assert graph.deduplicated_pair_count == 1
+    assert graph.edges[0].source_affordance_kind == "link"
+
+
+def test_calendar_discovered_link_variants_are_grouped_for_same_source_page() -> None:
+    source = make_page(
+        "0001-dashboard",
+        "https://example.com/my",
+        page_type=PageType.DASHBOARD,
+    )
+    source.discovered_links = [
+        "https://example.com/calendar/view.php?view=month",
+        "https://example.com/calendar/view.php?time=1&view=month",
+        "https://example.com/calendar/view.php?time=2&view=month",
+    ]
+    target = make_page(
+        "0002-calendar",
+        "https://example.com/calendar/view.php?view=month",
+        page_type=PageType.CALENDAR,
+    )
+
+    graph = derive_workflow_graph([source, target])
+
+    assert graph.candidate_edge_count == 1
+    assert graph.total_edges == 1
+
+
+def test_next_steps_drop_contextual_noise_when_task_edges_exist() -> None:
+    source = make_page(
+        "0001-messages",
+        "https://example.com/message/index.php",
+        page_type=PageType.MESSAGES,
+        actions=[
+            ActionAffordance(
+                label="Notification preferences",
+                url="https://example.com/message/notificationpreferences.php",
+                element_type=AffordanceElementType.LINK,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+        task_summary=PageTaskSummary(primary_page_intent=LikelyIntent.CONFIGURE, task_relevance_score=70),
+    )
+    source.discovered_links = ["https://example.com/calendar/view.php?view=month"]
+    prefs = make_page(
+        "0002-prefs",
+        "https://example.com/message/notificationpreferences.php",
+        page_type=PageType.MESSAGE_PREFERENCES,
+    )
+    calendar = make_page(
+        "0003-calendar",
+        "https://example.com/calendar/view.php?view=month",
+        page_type=PageType.CALENDAR,
+    )
+
+    derive_workflow_graph([source, prefs, calendar])
+
+    assert source.next_steps[0].page_id == "0002-prefs"
+    assert all(step.page_id != "0003-calendar" for step in source.next_steps)

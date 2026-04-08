@@ -104,8 +104,16 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
         json.dumps(
             {
                 "edge_type_counts": {"navigation": 1, "related": 1},
+                "candidate_edge_count": 3,
+                "suppressed_edge_count": 1,
+                "deduplicated_pair_count": 1,
                 "edge_weight_counts": {"high": 1, "medium": 0, "low": 1},
                 "edge_relevance_counts": {"task": 1, "support": 0, "navigation": 0, "contextual": 1},
+                "pre_dedup_edge_weight_counts": {"high": 1, "medium": 1, "low": 1},
+                "pre_dedup_edge_relevance_counts": {"task": 1, "support": 1, "navigation": 0, "contextual": 1},
+                "next_step_changed_pages": [
+                    {"page_id": "0002-course-view", "before_targets": ["https://example.com/custom/page.php?foo=1"], "after_targets": ["https://example.com/course/view.php?id=4"]}
+                ],
                 "edges": [
                     {"from_page_id": "0002-course-view", "edge_relevance": "task", "edge_weight": "high"},
                     {"from_page_id": "0003-unknown", "edge_relevance": "contextual"},
@@ -122,8 +130,12 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert summary.unknown_pages == 1
     assert summary.max_depth_reached == 3
     assert summary.page_type_counts["course_view"] == 1
+    assert summary.workflow_candidate_edge_count == 3
+    assert summary.workflow_suppressed_edge_count == 1
+    assert summary.workflow_deduplicated_pairs == 1
     assert summary.workflow_edge_weight_counts["high"] == 1
     assert summary.workflow_edge_relevance_counts["task"] == 1
+    assert summary.workflow_pre_dedup_edge_weight_counts["medium"] == 1
     assert summary.top_route_families[0]["route_family"] in {"/course/view.php", "/custom/page.php", "/my"}
     assert summary.query_heavy_routes
     assert summary.slowest_pages[0]["normalized_url"] == "https://example.com/course/view.php?id=4"
@@ -132,6 +144,8 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert summary.top_task_edge_page_types[0]["page_type"] == "course_view"
     assert summary.top_high_value_edge_page_types[0]["page_type"] == "course_view"
     assert summary.strongest_primary_pages[0]["page_id"] == "0001-my"
+    assert summary.intent_populated_pages == 0
+    assert summary.materially_changed_next_steps[0]["page_id"] == "0002-course-view"
 
 
 def test_recommended_next_actions_returns_human_useful_items() -> None:

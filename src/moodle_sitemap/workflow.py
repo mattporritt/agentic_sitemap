@@ -33,7 +33,7 @@ class EdgeCandidate:
 
 def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlabeled") -> WorkflowGraph:
     page_by_url = {page.normalized_url: page for page in pages}
-    edge_map: dict[tuple[str, str, str], WorkflowEdge] = {}
+    candidate_edges: list[WorkflowEdge] = []
 
     for page in pages:
         for candidate in collect_edge_candidates(page):
@@ -41,18 +41,22 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
             edge = build_edge(page, target_page, candidate)
             if edge is None:
                 continue
-            key = (edge.from_page_id, edge.target_url, edge.edge_type.value)
-            current = edge_map.get(key)
-            if current is None or edge_preference(edge) > edge_preference(current):
-                edge_map[key] = edge
+            candidate_edges.append(edge)
 
-    edges = list(edge_map.values())
+    before_next_steps = preview_next_steps_by_page(pages, candidate_edges)
+    edges, deduplicated_pairs = deduplicate_edges(candidate_edges)
+    suppressed_edge_count = max(len(candidate_edges) - len(edges), 0)
 
-    assign_next_steps(pages, edges)
+    changed_pages = assign_next_steps(pages, edges, before_next_steps=before_next_steps)
 
     edge_type_counts = {edge_type.value: 0 for edge_type in WorkflowEdgeType}
     edge_weight_counts = {edge_weight.value: 0 for edge_weight in EdgeWeight}
     edge_relevance_counts = {edge_relevance.value: 0 for edge_relevance in EdgeRelevance}
+    pre_dedup_edge_weight_counts = {edge_weight.value: 0 for edge_weight in EdgeWeight}
+    pre_dedup_edge_relevance_counts = {edge_relevance.value: 0 for edge_relevance in EdgeRelevance}
+    for edge in candidate_edges:
+        pre_dedup_edge_weight_counts[edge.edge_weight.value] += 1
+        pre_dedup_edge_relevance_counts[edge.edge_relevance.value] += 1
     for edge in edges:
         edge_type_counts[edge.edge_type.value] += 1
         edge_weight_counts[edge.edge_weight.value] += 1
@@ -60,22 +64,33 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
 
     return WorkflowGraph(
         role_profile=role_profile,
+        candidate_edge_count=len(candidate_edges),
+        suppressed_edge_count=suppressed_edge_count,
+        deduplicated_pair_count=deduplicated_pairs,
         total_edges=len(edges),
         edge_type_counts=edge_type_counts,
         edge_weight_counts=edge_weight_counts,
         edge_relevance_counts=edge_relevance_counts,
+        pre_dedup_edge_weight_counts=pre_dedup_edge_weight_counts,
+        pre_dedup_edge_relevance_counts=pre_dedup_edge_relevance_counts,
+        next_step_changed_pages=changed_pages,
         edges=sorted(edges, key=lambda item: (item.from_page_id, item.target_url, item.edge_type.value)),
     )
 
 
 def collect_edge_candidates(page: PageRecord) -> list[EdgeCandidate]:
     candidates: list[EdgeCandidate] = []
+    explicit_targets: set[str] = set()
+    seen_discovered_targets: set[str] = set()
+    seen_low_value_variant_groups: set[str] = set()
 
     for item in page.affordances.navigation:
         if item.url:
+            normalized_target = normalize_url(item.url)
+            explicit_targets.add(normalized_target)
             candidates.append(
                 EdgeCandidate(
-                    target_url=normalize_url(item.url),
+                    target_url=normalized_target,
                     label=item.label,
                     kind="navigation",
                     importance=item.importance_level,
@@ -85,9 +100,11 @@ def collect_edge_candidates(page: PageRecord) -> list[EdgeCandidate]:
 
     for item in page.affordances.tabs:
         if item.url:
+            normalized_target = normalize_url(item.url)
+            explicit_targets.add(normalized_target)
             candidates.append(
                 EdgeCandidate(
-                    target_url=normalize_url(item.url),
+                    target_url=normalized_target,
                     label=item.label,
                     kind="tab",
                     importance=ImportanceLevel.SECONDARY,
@@ -97,9 +114,11 @@ def collect_edge_candidates(page: PageRecord) -> list[EdgeCandidate]:
 
     for item in page.affordances.actions:
         if item.url:
+            normalized_target = normalize_url(item.url)
+            explicit_targets.add(normalized_target)
             candidates.append(
                 EdgeCandidate(
-                    target_url=normalize_url(item.url),
+                    target_url=normalized_target,
                     label=item.label,
                     kind=item.element_type.value,
                     importance=item.importance_level,
@@ -108,9 +127,18 @@ def collect_edge_candidates(page: PageRecord) -> list[EdgeCandidate]:
             )
 
     for url in page.discovered_links:
+        normalized_target = normalize_url(url)
+        if normalized_target in explicit_targets or normalized_target in seen_discovered_targets:
+            continue
+        variant_group = low_value_variant_group(normalized_target)
+        if variant_group and variant_group in seen_low_value_variant_groups:
+            continue
+        seen_discovered_targets.add(normalized_target)
+        if variant_group:
+            seen_low_value_variant_groups.add(variant_group)
         candidates.append(
             EdgeCandidate(
-                target_url=normalize_url(url),
+                target_url=normalized_target,
                 label=None,
                 kind="discovered_link",
                 importance=ImportanceLevel.TERTIARY,
@@ -250,24 +278,19 @@ def is_parent_child_edge(source_page: PageRecord, target_page: PageRecord) -> bo
         return True
     return False
 
-
-def assign_next_steps(pages: list[PageRecord], edges: list[WorkflowEdge]) -> None:
+def assign_next_steps(
+    pages: list[PageRecord],
+    edges: list[WorkflowEdge],
+    *,
+    before_next_steps: dict[str, list[str]] | None = None,
+) -> list[dict[str, object]]:
     edges_by_page: dict[str, list[WorkflowEdge]] = defaultdict(list)
     for edge in edges:
         edges_by_page[edge.from_page_id].append(edge)
 
+    changed_pages: list[dict[str, object]] = []
     for page in pages:
-        candidates = sorted(
-            edges_by_page.get(page.page_id, []),
-            key=lambda edge: (
-                edge_sort_rank(edge.edge_weight),
-                edge_relevance_rank(edge.edge_relevance),
-                source_importance_rank(edge.source_affordance_importance),
-                intent_alignment_rank(page, edge),
-                -(edge.confidence or 0.0),
-                edge.target_url,
-            ),
-        )
+        ranked_edges = rank_edges_for_next_steps(page, edges_by_page.get(page.page_id, []))
         page.next_steps = [
             NextStepHint(
                 page_id=edge.to_page_id,
@@ -280,8 +303,20 @@ def assign_next_steps(pages: list[PageRecord], edges: list[WorkflowEdge]) -> Non
                 likely_intent=infer_next_step_intent(edge),
                 notes=edge.notes,
             )
-            for edge in candidates[:5]
+            for edge in ranked_edges[:4]
         ]
+        if before_next_steps is not None:
+            previous_targets = before_next_steps.get(page.page_id, [])
+            current_targets = [item.target_url for item in page.next_steps]
+            if previous_targets[:4] != current_targets[:4]:
+                changed_pages.append(
+                    {
+                        "page_id": page.page_id,
+                        "before_targets": previous_targets[:4],
+                        "after_targets": current_targets[:4],
+                    }
+                )
+    return changed_pages
 
 
 def edge_preference(edge: WorkflowEdge) -> tuple[float, int, int]:
@@ -409,6 +444,8 @@ def infer_next_step_intent(edge: WorkflowEdge) -> LikelyIntent:
             WorkflowEdgeType.ADMIN,
         }:
             return LikelyIntent.CONFIGURE
+        if edge.edge_type == WorkflowEdgeType.RELATED and edge.reason_hint == "reporting-surface":
+            return LikelyIntent.REPORT
     if edge.edge_type == WorkflowEdgeType.PREFERENCES:
         return LikelyIntent.CONFIGURE
     if edge.edge_type == WorkflowEdgeType.EDIT:
@@ -462,3 +499,55 @@ def intent_alignment_rank(page: PageRecord, edge: WorkflowEdge) -> int:
     if infer_next_step_intent(edge) == primary_intent:
         return 0
     return 1
+
+
+def deduplicate_edges(candidate_edges: list[WorkflowEdge]) -> tuple[list[WorkflowEdge], int]:
+    edge_map: dict[tuple[str, str], WorkflowEdge] = {}
+    pair_counts: Counter[tuple[str, str]] = Counter()
+    for edge in candidate_edges:
+        key = (edge.from_page_id, edge.target_url)
+        pair_counts[key] += 1
+        current = edge_map.get(key)
+        if current is None or edge_preference(edge) > edge_preference(current):
+            edge_map[key] = edge
+    deduplicated_pairs = sum(1 for count in pair_counts.values() if count > 1)
+    return list(edge_map.values()), deduplicated_pairs
+
+
+def preview_next_steps_by_page(pages: list[PageRecord], edges: list[WorkflowEdge]) -> dict[str, list[str]]:
+    edges_by_page: dict[str, list[WorkflowEdge]] = defaultdict(list)
+    for edge in edges:
+        edges_by_page[edge.from_page_id].append(edge)
+    return {
+        page.page_id: [edge.target_url for edge in rank_edges_for_next_steps(page, edges_by_page.get(page.page_id, []))[:4]]
+        for page in pages
+    }
+
+
+def rank_edges_for_next_steps(page: PageRecord, edges: list[WorkflowEdge]) -> list[WorkflowEdge]:
+    candidates = sorted(
+        edges,
+        key=lambda edge: (
+            edge_sort_rank(edge.edge_weight),
+            edge_relevance_rank(edge.edge_relevance),
+            source_importance_rank(edge.source_affordance_importance),
+            intent_alignment_rank(page, edge),
+            -(edge.confidence or 0.0),
+            edge.target_url,
+        ),
+    )
+    if any(edge.edge_relevance in {EdgeRelevance.TASK, EdgeRelevance.SUPPORT} for edge in candidates):
+        candidates = [edge for edge in candidates if edge.edge_relevance != EdgeRelevance.CONTEXTUAL]
+    if page.task_summary.primary_page_intent != LikelyIntent.UNKNOWN:
+        aligned = [edge for edge in candidates if infer_next_step_intent(edge) == page.task_summary.primary_page_intent]
+        if aligned:
+            non_aligned = [edge for edge in candidates if infer_next_step_intent(edge) != page.task_summary.primary_page_intent]
+            candidates = aligned + non_aligned
+    return candidates
+
+
+def low_value_variant_group(url: str) -> str | None:
+    path = urlparse(url).path
+    if path == "/calendar/view.php":
+        return "/calendar/view.php"
+    return None

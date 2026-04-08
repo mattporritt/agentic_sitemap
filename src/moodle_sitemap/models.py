@@ -91,6 +91,7 @@ class LikelyIntent(StrEnum):
     NAVIGATE = "navigate"
     CONFIGURE = "configure"
     MESSAGE = "message"
+    REPORT = "report"
     UPLOAD = "upload"
     DOWNLOAD = "download"
     VIEW = "view"
@@ -289,10 +290,16 @@ class NextStepHint(StrictModel):
 
 class WorkflowGraph(StrictModel):
     role_profile: str = "unlabeled"
+    candidate_edge_count: int = 0
+    suppressed_edge_count: int = 0
+    deduplicated_pair_count: int = 0
     total_edges: int = 0
     edge_type_counts: dict[str, int] = Field(default_factory=dict)
     edge_weight_counts: dict[str, int] = Field(default_factory=dict)
     edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
+    pre_dedup_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
+    pre_dedup_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
+    next_step_changed_pages: list[dict[str, object]] = Field(default_factory=list)
     edges: list[WorkflowEdge] = Field(default_factory=list)
 
 
@@ -370,9 +377,14 @@ class DiscoverySummary(StrictModel):
     unique_normalized_urls: int
     unknown_pages: int
     workflow_edge_count: int = 0
+    workflow_candidate_edge_count: int = 0
+    workflow_suppressed_edge_count: int = 0
+    workflow_deduplicated_pairs: int = 0
     workflow_edge_type_counts: dict[str, int] = Field(default_factory=dict)
     workflow_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
     workflow_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
+    workflow_pre_dedup_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
+    workflow_pre_dedup_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
     crawl_duration_seconds: float
     max_depth_reached: int
     page_type_counts: dict[str, int] = Field(default_factory=dict)
@@ -388,6 +400,8 @@ class DiscoverySummary(StrictModel):
     top_high_value_edge_page_types: list[dict[str, int | str]] = Field(default_factory=list)
     noisy_admin_route_families: list[dict[str, int | str]] = Field(default_factory=list)
     strongest_primary_pages: list[dict[str, int | str]] = Field(default_factory=list)
+    intent_populated_pages: int = 0
+    materially_changed_next_steps: list[dict[str, object]] = Field(default_factory=list)
 
 
 class SiteManifest(StrictModel):

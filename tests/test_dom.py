@@ -2,13 +2,14 @@ from moodle_sitemap.extract.dom import (
     build_page_features_from_payload,
     derive_page_task_summary,
     infer_form_purpose,
+    refine_task_summary_for_page_type,
     normalize_body_classes,
     normalize_breadcrumbs,
     normalize_actions,
     normalize_filter_controls,
     normalize_forms,
 )
-from moodle_sitemap.models import FormFieldAffordance, FormPurpose, ImportanceLevel, LikelyIntent, MutationStrength, PageAffordances
+from moodle_sitemap.models import FormFieldAffordance, FormPurpose, ImportanceLevel, LikelyIntent, MutationStrength, PageAffordances, PageTaskSummary, PageType
 
 
 def test_normalize_body_classes_deduplicates_and_preserves_order() -> None:
@@ -261,3 +262,39 @@ def test_derive_page_task_summary_prefers_high_prominence_actions() -> None:
     assert summary.primary_page_intent == LikelyIntent.SAVE
     assert summary.primary_actions[0] == "Save changes"
     assert summary.task_relevance_score > 0
+
+
+def test_derive_page_task_summary_uses_page_hints_for_admin_search() -> None:
+    summary = derive_page_task_summary(
+        PageAffordances(
+            actions=normalize_actions([{"label": "Search", "element_type": "submit", "class_name": "btn btn-primary"}]),
+            forms=[],
+        ),
+        title="Search | Administration | Moodle Demo",
+        body_id="page-admin-search",
+        body_classes=["path-admin"],
+        breadcrumbs=["Administration", "Search"],
+    )
+
+    assert summary.primary_page_intent == LikelyIntent.SEARCH
+
+
+def test_derive_page_task_summary_uses_report_hint_for_report_builder() -> None:
+    summary = derive_page_task_summary(
+        PageAffordances(actions=[], forms=[]),
+        title="Report builder | Moodle Demo",
+        body_id="page-reportbuilder-index",
+        body_classes=["path-reportbuilder"],
+        breadcrumbs=["Report builder"],
+    )
+
+    assert summary.primary_page_intent == LikelyIntent.REPORT
+
+
+def test_refine_task_summary_for_page_type_overrides_known_page_families() -> None:
+    summary = refine_task_summary_for_page_type(
+        PageType.ADMIN_SEARCH,
+        PageTaskSummary(primary_page_intent=LikelyIntent.NAVIGATE, primary_actions=["Search"], task_relevance_score=90),
+    )
+
+    assert summary.primary_page_intent == LikelyIntent.SEARCH

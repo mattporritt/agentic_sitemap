@@ -25,6 +25,7 @@ from moodle_sitemap.models import (
     PageAffordances,
     PageFeatures,
     PageTaskSummary,
+    PageType,
     SafetyHints,
     SectionAffordance,
     TabAffordance,
@@ -58,6 +59,7 @@ INTENT_KEYWORDS: list[tuple[LikelyIntent, set[str]]] = [
     (LikelyIntent.FILTER, {"filter", "refine"}),
     (LikelyIntent.CONFIGURE, {"setting", "settings", "configure", "preferences", "option"}),
     (LikelyIntent.MESSAGE, {"message", "reply", "notification", "chat"}),
+    (LikelyIntent.REPORT, {"report", "gradebook", "grader"}),
     (LikelyIntent.UPLOAD, {"upload", "import", "attach"}),
     (LikelyIntent.DOWNLOAD, {"download", "export"}),
     (LikelyIntent.VIEW, {"view", "overview", "open"}),
@@ -358,6 +360,7 @@ def extract_page_features(page: Page) -> PageFeatures:
           );
 
           return {
+            title: document.title || null,
             body_id: body ? body.id || null : null,
             body_classes: body ? Array.from(body.classList) : [],
             breadcrumbs,
@@ -386,6 +389,8 @@ def extract_page_features(page: Page) -> PageFeatures:
 
 
 def build_page_features_from_payload(payload: dict) -> PageFeatures:
+    body_classes = normalize_body_classes(payload.get("body_classes", []))
+    breadcrumbs = normalize_breadcrumbs(payload.get("breadcrumbs", []))
     affordances_payload = payload.get("affordances", {})
     affordances = PageAffordances(
         actions=normalize_actions(affordances_payload.get("actions", [])),
@@ -401,10 +406,16 @@ def build_page_features_from_payload(payload: dict) -> PageFeatures:
     )
     return PageFeatures(
         body_id=(payload.get("body_id") or None),
-        body_classes=normalize_body_classes(payload.get("body_classes", [])),
-        breadcrumbs=normalize_breadcrumbs(payload.get("breadcrumbs", [])),
+        body_classes=body_classes,
+        breadcrumbs=breadcrumbs,
         affordances=affordances,
-        task_summary=derive_page_task_summary(affordances),
+        task_summary=derive_page_task_summary(
+            affordances,
+            title=normalize_scalar_text(payload.get("title")),
+            body_id=normalize_scalar_text(payload.get("body_id")),
+            body_classes=body_classes,
+            breadcrumbs=breadcrumbs,
+        ),
     )
 
 
@@ -905,16 +916,42 @@ def is_form_central_to_page(*, purpose: FormPurpose, fields: list[FormFieldAffor
     return False
 
 
-def derive_page_task_summary(affordances: PageAffordances) -> PageTaskSummary:
+def derive_page_task_summary(
+    affordances: PageAffordances,
+    *,
+    title: str | None = None,
+    body_id: str | None = None,
+    body_classes: list[str] | None = None,
+    breadcrumbs: list[str] | None = None,
+) -> PageTaskSummary:
     ranked_actions = sorted(
         affordances.actions,
         key=lambda item: (-item.prominence_score, item.importance_level.value, item.label),
     )
     primary_actions = [action.label for action in ranked_actions[:3]]
-    intent_counts = Counter(
-        [action.likely_intent for action in affordances.actions if action.likely_intent != LikelyIntent.UNKNOWN]
-        + [form.likely_intent for form in affordances.forms if form.likely_intent != LikelyIntent.UNKNOWN]
+    intent_counts = Counter()
+    for action in affordances.actions:
+        if action.likely_intent == LikelyIntent.UNKNOWN:
+            continue
+        boost = 4 if action.importance_level == ImportanceLevel.PRIMARY else 2 if action.importance_level == ImportanceLevel.SECONDARY else 1
+        intent_counts[action.likely_intent] += boost
+    for form in affordances.forms:
+        if form.likely_intent == LikelyIntent.UNKNOWN:
+            continue
+        boost = 5 if form.central_to_page else 3 if form.importance_level == ImportanceLevel.PRIMARY else 2
+        intent_counts[form.likely_intent] += boost
+    for item in affordances.navigation:
+        if item.likely_intent == LikelyIntent.UNKNOWN:
+            continue
+        intent_counts[item.likely_intent] += 2 if item.current else 1
+    hint_intent = infer_page_hint_intent(
+        title=title,
+        body_id=body_id,
+        body_classes=body_classes or [],
+        breadcrumbs=breadcrumbs or [],
     )
+    if hint_intent != LikelyIntent.UNKNOWN:
+        intent_counts[hint_intent] += 4
     primary_page_intent = intent_counts.most_common(1)[0][0] if intent_counts else LikelyIntent.UNKNOWN
     task_relevance_score = min(
         100,
@@ -926,6 +963,74 @@ def derive_page_task_summary(affordances: PageAffordances) -> PageTaskSummary:
         primary_page_intent=primary_page_intent,
         primary_actions=primary_actions,
         task_relevance_score=task_relevance_score,
+    )
+
+
+def infer_page_hint_intent(
+    *,
+    title: str | None,
+    body_id: str | None,
+    body_classes: list[str],
+    breadcrumbs: list[str],
+) -> LikelyIntent:
+    hint_text = " ".join(
+        part.lower()
+        for part in [
+            title or "",
+            body_id or "",
+            " ".join(body_classes),
+            " ".join(breadcrumbs),
+        ]
+        if part
+    )
+    if any(token in hint_text for token in {"message", "notificationpreferences", "notifications"}):
+        return LikelyIntent.MESSAGE
+    if any(token in hint_text for token in {"report", "gradebook", "grader"}):
+        return LikelyIntent.REPORT
+    if any(token in hint_text for token in {"preference", "setting", "admin-setting", "configuration"}):
+        return LikelyIntent.CONFIGURE
+    if any(token in hint_text for token in {"search", "page-admin-search"}):
+        return LikelyIntent.SEARCH
+    if any(token in hint_text for token in {"edit", "modedit"}):
+        return LikelyIntent.EDIT
+    if any(token in hint_text for token in {"upload", "file", "private files"}):
+        return LikelyIntent.UPLOAD
+    if any(token in hint_text for token in {"course-view", "dashboard", "calendar", "profile"}):
+        return LikelyIntent.NAVIGATE
+    return LikelyIntent.UNKNOWN
+
+
+def refine_task_summary_for_page_type(
+    page_type: PageType,
+    task_summary: PageTaskSummary,
+) -> PageTaskSummary:
+    intent_overrides = {
+        PageType.DASHBOARD: LikelyIntent.NAVIGATE,
+        PageType.COURSE_VIEW: LikelyIntent.NAVIGATE,
+        PageType.COURSE_EDIT: LikelyIntent.EDIT,
+        PageType.ACTIVITY_VIEW: LikelyIntent.VIEW,
+        PageType.ACTIVITY_EDIT: LikelyIntent.EDIT,
+        PageType.ADMIN_SEARCH: LikelyIntent.SEARCH,
+        PageType.ADMIN_CATEGORY: LikelyIntent.CONFIGURE,
+        PageType.ADMIN_SETTING_PAGE: LikelyIntent.CONFIGURE,
+        PageType.ADMIN_TOOL_PAGE: LikelyIntent.CONFIGURE,
+        PageType.USER_PREFERENCES: LikelyIntent.CONFIGURE,
+        PageType.MESSAGE_PREFERENCES: LikelyIntent.CONFIGURE,
+        PageType.MESSAGES: LikelyIntent.MESSAGE,
+        PageType.NOTIFICATIONS: LikelyIntent.MESSAGE,
+        PageType.CONTACT_SITE_SUPPORT: LikelyIntent.MESSAGE,
+        PageType.PRIVATE_FILES: LikelyIntent.UPLOAD,
+        PageType.REPORT_BUILDER: LikelyIntent.REPORT,
+        PageType.GRADEBOOK: LikelyIntent.REPORT,
+        PageType.CALENDAR: LikelyIntent.VIEW,
+    }
+    override = intent_overrides.get(page_type)
+    if override is None:
+        return task_summary
+    return PageTaskSummary(
+        primary_page_intent=override,
+        primary_actions=task_summary.primary_actions,
+        task_relevance_score=task_summary.task_relevance_score,
     )
 
 

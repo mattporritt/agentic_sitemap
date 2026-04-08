@@ -145,9 +145,14 @@ def build_discovery_summary(
         unique_normalized_urls=len({page.normalized_url for page in pages}),
         unknown_pages=manifest.summary.unknown_pages,
         workflow_edge_count=manifest.summary.workflow_edge_count,
+        workflow_candidate_edge_count=load_workflow_graph_metric(run_dir, "candidate_edge_count"),
+        workflow_suppressed_edge_count=load_workflow_graph_metric(run_dir, "suppressed_edge_count"),
+        workflow_deduplicated_pairs=load_workflow_graph_metric(run_dir, "deduplicated_pair_count"),
         workflow_edge_type_counts=load_workflow_edge_type_counts(run_dir),
         workflow_edge_weight_counts=load_workflow_edge_counts(run_dir, "edge_weight_counts"),
         workflow_edge_relevance_counts=load_workflow_edge_counts(run_dir, "edge_relevance_counts"),
+        workflow_pre_dedup_edge_weight_counts=load_workflow_edge_counts(run_dir, "pre_dedup_edge_weight_counts"),
+        workflow_pre_dedup_edge_relevance_counts=load_workflow_edge_counts(run_dir, "pre_dedup_edge_relevance_counts"),
         crawl_duration_seconds=(
             manifest.crawl_finished_at - manifest.crawl_started_at
         ).total_seconds(),
@@ -171,6 +176,8 @@ def build_discovery_summary(
         top_high_value_edge_page_types=top_high_value_edge_page_types(run_dir, pages),
         noisy_admin_route_families=noisy_admin_route_families(run_dir, pages),
         strongest_primary_pages=strongest_primary_pages(pages),
+        intent_populated_pages=sum(1 for page in pages if page.task_summary.primary_page_intent.value != "unknown"),
+        materially_changed_next_steps=load_materially_changed_next_steps(run_dir),
     )
 
 
@@ -237,13 +244,19 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
         f"- Unique normalized URLs: `{summary.unique_normalized_urls}`",
         f"- Unknown pages: `{summary.unknown_pages}`",
         f"- Workflow edges: `{summary.workflow_edge_count}`",
+        f"- Candidate workflow edges: `{summary.workflow_candidate_edge_count}`",
+        f"- Suppressed workflow edges: `{summary.workflow_suppressed_edge_count}`",
+        f"- Deduplicated source-target pairs: `{summary.workflow_deduplicated_pairs}`",
         f"- Crawl duration (seconds): `{summary.crawl_duration_seconds}`",
         f"- Max depth reached: `{summary.max_depth_reached}`",
         "",
         "## Workflow Signal",
         "",
+        f"- Pre-dedup edge weights: `{summary.workflow_pre_dedup_edge_weight_counts}`",
         f"- Edge weights: `{summary.workflow_edge_weight_counts}`",
+        f"- Pre-dedup edge relevance: `{summary.workflow_pre_dedup_edge_relevance_counts}`",
         f"- Edge relevance: `{summary.workflow_edge_relevance_counts}`",
+        f"- Pages with populated primary intent: `{summary.intent_populated_pages}`",
         "",
         "## Top Route Families",
     ]
@@ -276,6 +289,12 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
             lines.append(
                 f"- `{item['page_id']}` (`{item['page_type']}`): {item['primary_page_intent']} / {item['task_relevance_score']}"
             )
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Materially Changed Next Steps"])
+    if summary.materially_changed_next_steps:
+        for item in summary.materially_changed_next_steps[:5]:
+            lines.append(f"- `{item['page_id']}`")
     else:
         lines.append("- None")
     lines.extend(["", "## Unknown Pages"])
@@ -319,11 +338,29 @@ def load_workflow_edge_type_counts(run_dir: Path) -> dict[str, int]:
 
 
 def load_workflow_edge_counts(run_dir: Path, key: str) -> dict[str, int]:
+    raw = load_workflow_graph_raw(run_dir)
+    return raw.get(key, {}) if raw else {}
+
+
+def load_workflow_graph_metric(run_dir: Path, key: str) -> int:
+    raw = load_workflow_graph_raw(run_dir)
+    if not raw:
+        return 0
+    return int(raw.get(key, 0) or 0)
+
+
+def load_materially_changed_next_steps(run_dir: Path) -> list[dict[str, object]]:
+    raw = load_workflow_graph_raw(run_dir)
+    if not raw:
+        return []
+    return raw.get("next_step_changed_pages", [])
+
+
+def load_workflow_graph_raw(run_dir: Path) -> dict[str, object]:
     workflow_path = run_dir / "workflow-edges.json"
     if not workflow_path.exists():
         return {}
-    raw = json.loads(workflow_path.read_text(encoding="utf-8"))
-    return raw.get(key, {})
+    return json.loads(workflow_path.read_text(encoding="utf-8"))
 
 
 def top_task_edge_page_types(run_dir: Path, pages: list[PageRecord]) -> list[dict[str, int | str]]:
