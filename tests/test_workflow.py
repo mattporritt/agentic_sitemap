@@ -117,13 +117,13 @@ def test_derive_workflow_graph_marks_admin_navigation() -> None:
     admin_root = make_page(
         "0001-admin",
         "https://example.com/admin/search.php",
-        page_type=PageType.ADMIN_SETTINGS,
+        page_type=PageType.ADMIN_SEARCH,
         tabs=[TabAffordance(label="Registration", url="https://example.com/admin/registration/index.php")],
     )
     admin_child = make_page(
         "0002-registration",
         "https://example.com/admin/registration/index.php",
-        page_type=PageType.ADMIN_SETTINGS,
+        page_type=PageType.ADMIN_SETTING_PAGE,
         crawl_depth=1,
         title="Registration | Moodle Demo",
         breadcrumbs=["Administration", "Registration"],
@@ -133,6 +133,8 @@ def test_derive_workflow_graph_marks_admin_navigation() -> None:
 
     assert graph.edges[0].edge_type == WorkflowEdgeType.ADMIN
     assert graph.edges[0].source_affordance_kind == "tab"
+    assert graph.edges[0].edge_weight == EdgeWeight.HIGH
+    assert graph.edges[0].edge_relevance == EdgeRelevance.TASK
 
 
 def test_derive_workflow_graph_uses_related_fallback_for_discovered_links() -> None:
@@ -197,3 +199,44 @@ def test_next_steps_prefers_primary_task_edges_over_generic_navigation() -> None
     assert course.next_steps[0].page_id == "0002-edit"
     assert course.next_steps[0].edge_relevance == EdgeRelevance.TASK
     assert course.next_steps[0].edge_weight == EdgeWeight.HIGH
+
+
+def test_admin_search_prefers_specific_setting_page_over_broad_admin_category() -> None:
+    admin_search = make_page(
+        "0001-admin-search",
+        "https://example.com/admin/search.php",
+        page_type=PageType.ADMIN_SEARCH,
+        navigation=[
+            NavigationItem(
+                label="AI settings",
+                url="https://example.com/admin/settings.php?section=aiprovider",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            ),
+            NavigationItem(
+                label="Competencies",
+                url="https://example.com/admin/category.php?category=competencies",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.NAVIGATE,
+            ),
+        ],
+        task_summary=PageTaskSummary(primary_page_intent=LikelyIntent.CONFIGURE, task_relevance_score=85),
+    )
+    admin_setting = make_page(
+        "0002-admin-setting",
+        "https://example.com/admin/settings.php?section=aiprovider",
+        page_type=PageType.ADMIN_SETTING_PAGE,
+    )
+    admin_category = make_page(
+        "0003-admin-category",
+        "https://example.com/admin/category.php?category=competencies",
+        page_type=PageType.ADMIN_CATEGORY,
+    )
+
+    derive_workflow_graph([admin_search, admin_setting, admin_category])
+
+    assert admin_search.next_steps[0].page_id == "0002-admin-setting"
+    assert admin_search.next_steps[0].edge_weight == EdgeWeight.HIGH
+    assert admin_search.next_steps[0].edge_relevance == EdgeRelevance.TASK

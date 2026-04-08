@@ -38,7 +38,10 @@ Initial page types:
 - `course_switch_role`
 - `activity_view`
 - `activity_edit`
-- `admin_settings`
+- `admin_search`
+- `admin_category`
+- `admin_setting_page`
+- `admin_tool_page`
 - `contact_site_support`
 - `user_profile`
 - `user_preferences`
@@ -54,6 +57,7 @@ Initial page types:
 `messages` means the main Moodle messaging interface at `message/index.php`.
 `course_switch_role` means the course role-switching interface at `course/switchrole.php`.
 `contact_site_support` means the contact site support form/page at `user/contactsitesupport.php`.
+The admin surface is intentionally split into a few stable route-driven subtypes rather than one broad admin bucket.
 
 ## Non-goals
 
@@ -395,7 +399,8 @@ Example `sitemap.json` summary shape:
       "dashboard": 1,
       "course_view": 0,
       "activity_view": 0,
-      "admin_settings": 2,
+      "admin_search": 1,
+      "admin_setting_page": 1,
       "user_profile": 1,
       "gradebook": 1,
       "unknown": 5
@@ -438,6 +443,7 @@ The crawler also writes `workflow-edges.json`, which captures likely page-to-pag
 - course pages to related pages or activities
 - preference pages to more specific preference pages
 - admin pages to deeper admin pages
+- admin search and category hubs to more specific settings and tool pages
 
 This is different from raw discovered links:
 
@@ -445,6 +451,7 @@ This is different from raw discovered links:
 - workflow edges are filtered, typed relationships between visited pages
 - edges include the source affordance label or kind when known
 - edges also include a weight and relevance hint so downstream tools can separate task-bearing paths from generic site navigation
+- admin-heavy runs should now surface more specific admin page families and clearer configuration paths
 
 Edge types stay intentionally small:
 
@@ -463,6 +470,12 @@ Each workflow edge also carries a separate weighting layer:
 - `edge_relevance`: `task`, `support`, `navigation`, or `contextual`
 - `source_affordance_importance`: how prominent the originating control looked
 - `reason_hint`: a short explanation of why the edge was weighted that way
+
+The weighting is intentionally conservative:
+
+- specific admin search/category to setting/tool pages should usually rank above broad admin hubs
+- course and preference configuration paths should rank above generic site navigation
+- repeated calendar variants, discovered-only admin links, and generic nav clusters should stay lower-value
 
 The important distinction is:
 

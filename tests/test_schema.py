@@ -115,7 +115,7 @@ def test_build_manifest_summary_counts_page_types() -> None:
             normalized_url="https://example.com/admin/search.php",
             final_url="https://example.com/admin/search.php",
             title="Admin",
-            page_type=PageType.ADMIN_SETTINGS,
+            page_type=PageType.ADMIN_SEARCH,
             body_classes=[],
             breadcrumbs=[],
             discovered_links=[],
@@ -141,7 +141,10 @@ def test_build_manifest_summary_counts_page_types() -> None:
     assert summary.unknown_pages == 1
     assert summary.workflow_edge_count == 0
     assert summary.page_type_counts["dashboard"] == 1
-    assert summary.page_type_counts["admin_settings"] == 1
+    assert summary.page_type_counts["admin_search"] == 1
+    assert summary.page_type_counts["admin_category"] == 0
+    assert summary.page_type_counts["admin_setting_page"] == 0
+    assert summary.page_type_counts["admin_tool_page"] == 0
     assert summary.page_type_counts["course_switch_role"] == 0
     assert summary.page_type_counts["contact_site_support"] == 0
     assert summary.page_type_counts["messages"] == 0

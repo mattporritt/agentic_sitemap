@@ -173,7 +173,12 @@ def infer_edge_type(
     if source_type == PageType.COURSE_VIEW and target_type == PageType.COURSE_EDIT:
         return WorkflowEdgeType.EDIT, 0.9, "course-edit-link"
 
-    if source_type == PageType.COURSE_VIEW and target_type == PageType.ADMIN_SETTINGS:
+    if source_type == PageType.COURSE_VIEW and target_type in {
+        PageType.ADMIN_SEARCH,
+        PageType.ADMIN_CATEGORY,
+        PageType.ADMIN_SETTING_PAGE,
+        PageType.ADMIN_TOOL_PAGE,
+    }:
         return WorkflowEdgeType.SETTINGS, 0.75, "course-settings-like-link"
 
     if source_type == PageType.USER_PREFERENCES and target_type == PageType.MESSAGE_PREFERENCES:
@@ -182,7 +187,30 @@ def infer_edge_type(
     if source_type == PageType.MESSAGES and target_type == PageType.MESSAGE_PREFERENCES:
         return WorkflowEdgeType.PREFERENCES, 0.95, "messages-to-preferences"
 
-    if source_type == PageType.ADMIN_SETTINGS and target_type == PageType.ADMIN_SETTINGS:
+    if source_type == PageType.ADMIN_SEARCH and target_type in {
+        PageType.ADMIN_CATEGORY,
+        PageType.ADMIN_SETTING_PAGE,
+        PageType.ADMIN_TOOL_PAGE,
+    }:
+        return WorkflowEdgeType.ADMIN, 0.92, "admin-search-result"
+
+    if source_type == PageType.ADMIN_CATEGORY and target_type in {
+        PageType.ADMIN_SETTING_PAGE,
+        PageType.ADMIN_TOOL_PAGE,
+    }:
+        return WorkflowEdgeType.ADMIN, 0.9, "admin-category-drilldown"
+
+    if source_type in {
+        PageType.ADMIN_SEARCH,
+        PageType.ADMIN_CATEGORY,
+        PageType.ADMIN_SETTING_PAGE,
+        PageType.ADMIN_TOOL_PAGE,
+    } and target_type in {
+        PageType.ADMIN_SEARCH,
+        PageType.ADMIN_CATEGORY,
+        PageType.ADMIN_SETTING_PAGE,
+        PageType.ADMIN_TOOL_PAGE,
+    }:
         return WorkflowEdgeType.ADMIN, 0.85, "admin-to-admin-navigation"
 
     if kind == "tab":
@@ -288,18 +316,40 @@ def infer_edge_weight(
     if edge_type == WorkflowEdgeType.SETTINGS:
         if candidate.importance == ImportanceLevel.PRIMARY or source_page.page_type in {
             PageType.COURSE_VIEW,
-            PageType.ADMIN_SETTINGS,
+            PageType.ADMIN_SEARCH,
+            PageType.ADMIN_CATEGORY,
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
             PageType.USER_PREFERENCES,
         }:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "settings-progression"
         return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "settings-support"
     if edge_type == WorkflowEdgeType.ADMIN:
-        if candidate.importance == ImportanceLevel.PRIMARY:
+        if source_page.page_type == PageType.ADMIN_SEARCH and target_page.page_type in {
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-search-to-specific-page"
+        if source_page.page_type == PageType.ADMIN_CATEGORY and target_page.page_type in {
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-category-to-specific-page"
+        if candidate.importance == ImportanceLevel.PRIMARY and target_page.page_type != PageType.ADMIN_CATEGORY:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-primary-drilldown"
+        if target_page.page_type == PageType.ADMIN_CATEGORY:
+            return EdgeWeight.LOW, EdgeRelevance.NAVIGATION, "broad-admin-category"
         return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "admin-drilldown"
     if candidate.kind == "discovered_link":
         if "calendar/view.php" in target_page.normalized_url:
             return EdgeWeight.LOW, EdgeRelevance.CONTEXTUAL, "calendar-variant"
+        if target_page.page_type in {
+            PageType.ADMIN_SEARCH,
+            PageType.ADMIN_CATEGORY,
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return EdgeWeight.LOW, EdgeRelevance.CONTEXTUAL, "admin-discovered-link"
         return EdgeWeight.LOW, EdgeRelevance.CONTEXTUAL, "discovered-link"
     if candidate.likely_intent in {
         LikelyIntent.CREATE,
@@ -315,8 +365,30 @@ def infer_edge_weight(
     if edge_type == WorkflowEdgeType.NAVIGATION:
         if source_page.page_type == PageType.DASHBOARD and target_page.page_type == PageType.COURSE_VIEW:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "dashboard-course-entry"
+        if source_page.page_type == PageType.ADMIN_SEARCH and target_page.page_type in {
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-search-navigation"
+        if source_page.page_type == PageType.ADMIN_CATEGORY and target_page.page_type in {
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-category-navigation"
         if candidate.kind == "tab":
             return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "tab-navigation"
+        if source_page.page_type in {
+            PageType.ADMIN_SEARCH,
+            PageType.ADMIN_CATEGORY,
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        } and target_page.page_type in {
+            PageType.ADMIN_SEARCH,
+            PageType.ADMIN_CATEGORY,
+            PageType.ADMIN_SETTING_PAGE,
+            PageType.ADMIN_TOOL_PAGE,
+        }:
+            return EdgeWeight.LOW, EdgeRelevance.NAVIGATION, "generic-admin-navigation"
         if candidate.importance == ImportanceLevel.PRIMARY:
             return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "primary-navigation"
         return EdgeWeight.LOW, EdgeRelevance.NAVIGATION, "generic-navigation"

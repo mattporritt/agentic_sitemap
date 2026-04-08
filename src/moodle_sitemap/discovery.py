@@ -120,7 +120,7 @@ def build_discovery_summary(
             "page_type": page.page_type.value,
         }
         for page in pages
-        if page.page_type.value in {"unknown", "admin_settings"}
+        if page.page_type.value in {"unknown", "admin_category", "admin_setting_page"}
     ][:10]
     exclusion_candidates = [
         {"route_family": family, "count": count}
@@ -168,6 +168,8 @@ def build_discovery_summary(
         exclusion_candidates=exclusion_candidates,
         newly_seen_route_families=newly_seen_route_families,
         top_task_edge_page_types=top_task_edge_page_types(run_dir, pages),
+        top_high_value_edge_page_types=top_high_value_edge_page_types(run_dir, pages),
+        noisy_admin_route_families=noisy_admin_route_families(run_dir, pages),
         strongest_primary_pages=strongest_primary_pages(pages),
     )
 
@@ -210,10 +212,18 @@ def load_optional_manifest(path: str | Path | None) -> SiteManifest | None:
     raw_data = json.loads(manifest_path.read_text(encoding="utf-8"))
     for page in raw_data.get("pages", []):
         if isinstance(page, dict):
+            if page.get("page_type") == "admin_settings":
+                page["page_type"] = "admin_setting_page"
             page.pop("forms", None)
             page.pop("editors", None)
             page.pop("links", None)
             page.pop("buttons", None)
+    summary = raw_data.get("summary")
+    if isinstance(summary, dict):
+        page_type_counts = summary.get("page_type_counts")
+        if isinstance(page_type_counts, dict) and "admin_settings" in page_type_counts:
+            admin_count = int(page_type_counts.pop("admin_settings") or 0)
+            page_type_counts["admin_setting_page"] = page_type_counts.get("admin_setting_page", 0) + admin_count
     return SiteManifest.model_validate(raw_data)
 
 
@@ -246,6 +256,18 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
     if summary.top_task_edge_page_types:
         for item in summary.top_task_edge_page_types:
             lines.append(f"- `{item['page_type']}`: {item['task_edge_count']}")
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Top High-Value Edge Page Types"])
+    if summary.top_high_value_edge_page_types:
+        for item in summary.top_high_value_edge_page_types:
+            lines.append(f"- `{item['page_type']}`: {item['high_value_edge_count']}")
+    else:
+        lines.append("- None")
+    lines.extend(["", "## Noisy Admin Route Families"])
+    if summary.noisy_admin_route_families:
+        for item in summary.noisy_admin_route_families:
+            lines.append(f"- `{item['route_family']}`: {item['low_value_edge_count']}")
     else:
         lines.append("- None")
     lines.extend(["", "## Strongest Primary Pages"])
@@ -283,6 +305,8 @@ def recommended_next_actions(summary: DiscoverySummary) -> list[str]:
         actions.append("Consider whether repeated utility pages should eventually be excluded from large discovery runs.")
     if summary.workflow_edge_relevance_counts.get("contextual", 0):
         actions.append("Review low-value contextual edges and generic route families to reduce graph noise.")
+    if summary.page_type_counts.get("admin_category", 0) or summary.page_type_counts.get("admin_setting_page", 0):
+        actions.append("Inspect whether any remaining admin subtypes are still too broad and need later decomposition.")
     return actions[:5]
 
 
@@ -316,6 +340,47 @@ def top_task_edge_page_types(run_dir: Path, pages: list[PageRecord]) -> list[dic
     return [
         {"page_type": page_type, "task_edge_count": count}
         for page_type, count in counts.most_common(5)
+    ]
+
+
+def top_high_value_edge_page_types(run_dir: Path, pages: list[PageRecord]) -> list[dict[str, int | str]]:
+    workflow_path = run_dir / "workflow-edges.json"
+    if not workflow_path.exists():
+        return []
+    raw = json.loads(workflow_path.read_text(encoding="utf-8"))
+    page_type_by_id = {page.page_id: page.page_type.value for page in pages}
+    counts = Counter(
+        page_type_by_id.get(edge.get("from_page_id"), "unknown")
+        for edge in raw.get("edges", [])
+        if edge.get("edge_weight") == "high"
+    )
+    return [
+        {"page_type": page_type, "high_value_edge_count": count}
+        for page_type, count in counts.most_common(5)
+    ]
+
+
+def noisy_admin_route_families(run_dir: Path, pages: list[PageRecord]) -> list[dict[str, int | str]]:
+    workflow_path = run_dir / "workflow-edges.json"
+    if not workflow_path.exists():
+        return []
+    raw = json.loads(workflow_path.read_text(encoding="utf-8"))
+    page_by_id = {page.page_id: page for page in pages}
+    counts: Counter[str] = Counter()
+    for edge in raw.get("edges", []):
+        if edge.get("edge_weight") != "low":
+            continue
+        if edge.get("edge_relevance") not in {"navigation", "contextual"}:
+            continue
+        source_page = page_by_id.get(edge.get("from_page_id"))
+        if source_page is None:
+            continue
+        if not source_page.page_type.value.startswith("admin_"):
+            continue
+        counts[route_family(source_page.normalized_url)] += 1
+    return [
+        {"route_family": family, "low_value_edge_count": count}
+        for family, count in counts.most_common(5)
     ]
 
 

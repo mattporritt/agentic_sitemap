@@ -107,7 +107,7 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
                 "edge_weight_counts": {"high": 1, "medium": 0, "low": 1},
                 "edge_relevance_counts": {"task": 1, "support": 0, "navigation": 0, "contextual": 1},
                 "edges": [
-                    {"from_page_id": "0002-course-view", "edge_relevance": "task"},
+                    {"from_page_id": "0002-course-view", "edge_relevance": "task", "edge_weight": "high"},
                     {"from_page_id": "0003-unknown", "edge_relevance": "contextual"},
                 ],
             }
@@ -130,6 +130,7 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert summary.unknown_pages_detail[0]["normalized_url"] == "https://example.com/custom/page.php?foo=1"
     assert "/course/view.php" in summary.newly_seen_route_families
     assert summary.top_task_edge_page_types[0]["page_type"] == "course_view"
+    assert summary.top_high_value_edge_page_types[0]["page_type"] == "course_view"
     assert summary.strongest_primary_pages[0]["page_id"] == "0001-my"
 
 
@@ -172,7 +173,10 @@ def test_load_optional_manifest_tolerates_legacy_page_fields(tmp_path: Path) -> 
                 "summary": {
                     "total_pages": 1,
                     "unknown_pages": 0,
-                    "page_type_counts": {page_type.value: (1 if page_type == PageType.DASHBOARD else 0) for page_type in PageType},
+                    "page_type_counts": {
+                        **{page_type.value: (1 if page_type == PageType.DASHBOARD else 0) for page_type in PageType},
+                        "admin_settings": 1,
+                    },
                     "crawl_started_at": "2026-04-08T10:00:00Z",
                     "crawl_finished_at": "2026-04-08T10:00:30Z",
                 },
@@ -183,7 +187,7 @@ def test_load_optional_manifest_tolerates_legacy_page_fields(tmp_path: Path) -> 
                         "normalized_url": "https://example.com/my",
                         "final_url": "https://example.com/my",
                         "title": "Dashboard",
-                        "page_type": "dashboard",
+                        "page_type": "admin_settings",
                         "body_id": "page-my-index",
                         "body_classes": ["path-my"],
                         "breadcrumbs": [],
@@ -205,3 +209,5 @@ def test_load_optional_manifest_tolerates_legacy_page_fields(tmp_path: Path) -> 
 
     assert manifest is not None
     assert manifest.pages[0].affordances == PageAffordances()
+    assert manifest.pages[0].page_type == PageType.ADMIN_SETTING_PAGE
+    assert manifest.summary.page_type_counts["admin_setting_page"] == 1

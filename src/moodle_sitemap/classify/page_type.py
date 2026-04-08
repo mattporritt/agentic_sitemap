@@ -58,8 +58,28 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
     if "activity" in breadcrumbs and path.endswith("/view.php"):
         return PageType.ACTIVITY_VIEW
 
+    if path == "/admin/search.php" or body_id == "page-admin-search":
+        return PageType.ADMIN_SEARCH
+
+    if path == "/admin/category.php" or body_id == "page-admin-category":
+        return PageType.ADMIN_CATEGORY
+
+    if path == "/admin/settings.php" or body_id == "page-admin-setting":
+        return PageType.ADMIN_SETTING_PAGE
+
+    if path.startswith("/admin/tool/") or "tool" in breadcrumbs and path.startswith("/admin/"):
+        return PageType.ADMIN_TOOL_PAGE
+
     if path.startswith("/admin/") or "admin" in breadcrumbs or "path-admin" in classes:
-        return PageType.ADMIN_SETTINGS
+        if "search" in path or "search" in body_id:
+            return PageType.ADMIN_SEARCH
+        if "category.php" in path:
+            return PageType.ADMIN_CATEGORY
+        if "settings.php" in path:
+            return PageType.ADMIN_SETTING_PAGE
+        if "/tool/" in path:
+            return PageType.ADMIN_TOOL_PAGE
+        return PageType.ADMIN_SETTING_PAGE
 
     if path == "/user/profile.php" or "user-profile" in classes:
         return PageType.USER_PROFILE

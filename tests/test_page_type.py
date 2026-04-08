@@ -99,12 +99,36 @@ def test_classify_activity_edit() -> None:
     assert page_type == PageType.ACTIVITY_EDIT
 
 
-def test_classify_admin_settings() -> None:
+def test_classify_admin_search() -> None:
+    page_type = classify_page(
+        "https://example.com/admin/search.php?query=users",
+        make_features(),
+    )
+    assert page_type == PageType.ADMIN_SEARCH
+
+
+def test_classify_admin_category() -> None:
+    page_type = classify_page(
+        "https://example.com/admin/category.php?category=ai",
+        make_features(),
+    )
+    assert page_type == PageType.ADMIN_CATEGORY
+
+
+def test_classify_admin_setting_page() -> None:
     page_type = classify_page(
         "https://example.com/admin/settings.php?section=users",
         make_features(),
     )
-    assert page_type == PageType.ADMIN_SETTINGS
+    assert page_type == PageType.ADMIN_SETTING_PAGE
+
+
+def test_classify_admin_tool_page() -> None:
+    page_type = classify_page(
+        "https://example.com/admin/tool/admin_presets/index.php",
+        make_features(),
+    )
+    assert page_type == PageType.ADMIN_TOOL_PAGE
 
 
 def test_classify_user_profile() -> None:

@@ -17,7 +17,10 @@ class PageType(StrEnum):
     COURSE_SWITCH_ROLE = "course_switch_role"
     ACTIVITY_VIEW = "activity_view"
     ACTIVITY_EDIT = "activity_edit"
-    ADMIN_SETTINGS = "admin_settings"
+    ADMIN_SEARCH = "admin_search"
+    ADMIN_CATEGORY = "admin_category"
+    ADMIN_SETTING_PAGE = "admin_setting_page"
+    ADMIN_TOOL_PAGE = "admin_tool_page"
     CONTACT_SITE_SUPPORT = "contact_site_support"
     USER_PROFILE = "user_profile"
     USER_PREFERENCES = "user_preferences"
@@ -382,6 +385,8 @@ class DiscoverySummary(StrictModel):
     exclusion_candidates: list[dict[str, int | str]] = Field(default_factory=list)
     newly_seen_route_families: list[str] = Field(default_factory=list)
     top_task_edge_page_types: list[dict[str, int | str]] = Field(default_factory=list)
+    top_high_value_edge_page_types: list[dict[str, int | str]] = Field(default_factory=list)
+    noisy_admin_route_families: list[dict[str, int | str]] = Field(default_factory=list)
     strongest_primary_pages: list[dict[str, int | str]] = Field(default_factory=list)
 
 
