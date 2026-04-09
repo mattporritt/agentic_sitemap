@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Discovery-run orchestration and post-run summary generation.
+
+Discovery mode builds on the normal crawl output. Its job is to widen the crawl
+budget and then summarize what that broader run surfaced in a way that is easy
+for humans and downstream tooling to inspect.
+"""
+
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +21,8 @@ from moodle_sitemap.models import DiscoverySummary, PageRecord, SiteManifest
 
 @dataclass(slots=True)
 class DiscoveryRunResult:
+    """Paths and parsed models produced by a single discovery run."""
+
     run_dir: Path
     manifest: SiteManifest
     summary: DiscoverySummary
@@ -22,6 +31,8 @@ class DiscoveryRunResult:
 
 
 def create_discovery_run_dir(base_dir: str | Path = "discovery-runs") -> Path:
+    """Create a timestamped directory for one discovery run."""
+
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
     run_dir = Path(base_dir) / timestamp
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -37,6 +48,8 @@ def run_discovery(
     baseline_manifest_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> DiscoveryRunResult:
+    """Run a broader bounded crawl and write discovery summary artifacts."""
+
     config = load_smoke_config(config_path)
     run_dir = create_discovery_run_dir(base_dir)
     manifest = crawl_site(
@@ -78,6 +91,8 @@ def build_discovery_summary(
     run_dir: Path,
     baseline_manifest: SiteManifest | None = None,
 ) -> DiscoverySummary:
+    """Build the machine-readable summary for a saved discovery run."""
+
     pages = manifest.pages
     route_family_counts = Counter(route_family(page.normalized_url) for page in pages)
     query_heavy_counts = Counter(
@@ -186,6 +201,8 @@ def build_discovery_summary(
 
 
 def route_family(url: str) -> str:
+    """Group a URL into a compact path family for summary reporting."""
+
     parsed = urlparse(url)
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if not parts:
@@ -194,6 +211,8 @@ def route_family(url: str) -> str:
 
 
 def route_signature(url: str) -> str:
+    """Return a route plus sorted query keys for query-heavy reporting."""
+
     parsed = urlparse(url)
     query_keys = sorted(key for key, _ in parse_qsl(parsed.query, keep_blank_values=True))
     if not query_keys:
@@ -202,6 +221,8 @@ def route_signature(url: str) -> str:
 
 
 def find_latest_manifest(base_dir: Path) -> Path | None:
+    """Return the newest `sitemap.json` under a run-root directory."""
+
     if not base_dir.exists():
         return None
     candidates = sorted(
@@ -215,6 +236,13 @@ def find_latest_manifest(base_dir: Path) -> Path | None:
 
 
 def load_optional_manifest(path: str | Path | None) -> SiteManifest | None:
+    """Load a saved manifest when present, tolerating older enum names.
+
+    Discovery summaries compare against earlier runs. This loader keeps that
+    comparison working even when saved manifests predate small taxonomy or
+    schema cleanups.
+    """
+
     if path is None:
         return None
     manifest_path = Path(path)
@@ -239,6 +267,8 @@ def load_optional_manifest(path: str | Path | None) -> SiteManifest | None:
 
 
 def render_discovery_markdown(summary: DiscoverySummary) -> str:
+    """Render a concise human-readable companion to `discovery-summary.json`."""
+
     lines = [
         "# Discovery Summary",
         "",

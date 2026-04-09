@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Shared artifact models and enums for `moodle-sitemap`.
+
+The models in this file define the saved JSON contract. Downstream workflows,
+comparison logic, and task validation all depend on these types staying
+internally consistent.
+"""
+
 from datetime import datetime, timezone
 from enum import StrEnum
 
@@ -7,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class StrictModel(BaseModel):
+    """Base model that forbids undeclared fields in saved artifacts."""
+
     model_config = ConfigDict(extra="forbid")
 
 

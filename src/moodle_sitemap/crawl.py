@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Core crawl orchestration for authenticated Moodle site mapping.
+
+This module owns the main browser-backed crawl loop. It is responsible for
+turning visited pages into stable `PageRecord` artifacts and then deriving the
+manifest and workflow graph from those page records.
+"""
+
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -31,6 +38,8 @@ from moodle_sitemap.workflow import derive_workflow_graph
 
 @dataclass(slots=True)
 class CrawlConfig:
+    """Runtime options for a single crawl execution."""
+
     site_url: str
     username: str
     password: str
@@ -47,6 +56,13 @@ ProgressCallback = Callable[[PageRecord, int, int], None]
 
 @dataclass
 class CrawlVisitIndex:
+    """Tracks queued, visited, and aliased URLs during a crawl.
+
+    Moodle often exposes the same destination through several safe variants.
+    This index keeps de-duplication conservative by remembering both requested
+    targets and their resolved normalized destinations.
+    """
+
     visited_targets: set[str] = field(default_factory=set)
     visited_normalized: set[str] = field(default_factory=set)
     queued_targets: set[str] = field(default_factory=set)
@@ -83,6 +99,14 @@ def crawl_site(
     *,
     progress_callback: ProgressCallback | None = None,
 ) -> SiteManifest:
+    """Run a bounded authenticated crawl and write its JSON artifacts.
+
+    The crawl is intentionally conservative: same-origin only, safe links only,
+    and no form submission. Classification, task-summary refinement, safety
+    summarization, and workflow derivation all happen from the visited pages in
+    this function so the saved artifacts stay internally consistent.
+    """
+
     crawl_started_at = datetime.now(timezone.utc)
     start_url = normalize_url(config.site_url)
     parsed_site = urlparse(start_url)
@@ -207,6 +231,8 @@ def crawl_site(
 
 
 def format_progress_line(page: PageRecord, *, current_count: int, max_pages: int) -> str:
+    """Render a short CLI progress line for a visited page."""
+
     return (
         f"[{current_count}/{max_pages}] "
         f"{page.page_id} "

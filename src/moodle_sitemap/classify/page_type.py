@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+"""Deterministic Moodle page classification rules.
+
+The taxonomy is intentionally small and route-driven. When in doubt, prefer a
+conservative existing type or `unknown` over creating a clever but ambiguous
+rule.
+"""
+
 from urllib.parse import parse_qs, urlparse
 
 from moodle_sitemap.models import PageFeatures, PageType
 
 
 def classify_page(url: str, features: PageFeatures) -> PageType:
+    """Classify one rendered page using stable Moodle-aware cues."""
+
     parsed = urlparse(url)
     path = parsed.path.lower()
     query = parse_qs(parsed.query)
@@ -123,6 +132,8 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
 
 
 def _is_dashboard_page(*, path: str, body_id: str, classes: set[str]) -> bool:
+    """Detect real dashboard pages without over-trusting layout classes."""
+
     if path in {"/my", "/my/"}:
         return True
     if body_id == "page-my-index":

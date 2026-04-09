@@ -5,6 +5,7 @@ from pathlib import Path
 from moodle_sitemap.models import (
     ActionAffordance,
     AffordanceElementType,
+    BackgroundNavigationCluster,
     EdgeRelevance,
     EdgeWeight,
     LikelyIntent,
@@ -244,3 +245,46 @@ def test_collect_key_affordances_prefers_task_relevant_controls_over_generic_lin
 
     assert labels[:2] == ["Message email notifications", "Notification preferences"]
     assert "Skip to main content" not in labels
+
+
+def test_evaluate_task_uses_background_cluster_path_for_calendar_surface() -> None:
+    dashboard = make_page("0001-my", "https://example.com/my", page_type=PageType.DASHBOARD)
+    dashboard.background_navigation_clusters = [
+        BackgroundNavigationCluster(
+            cluster_type="repeated_variant_cluster",
+            source_page_id="0001-my",
+            family_key="/calendar/view.php",
+            count=3,
+            representative_targets=["https://example.com/calendar/view.php?view=month"],
+            edge_relevance=EdgeRelevance.CONTEXTUAL,
+            edge_weight=EdgeWeight.LOW,
+            reason_hint="compressed-calendar-variants",
+        )
+    ]
+    target = make_page(
+        "0002-calendar",
+        "https://example.com/calendar/view.php?view=month",
+        page_type=PageType.CALENDAR,
+        actions=[
+            ActionAffordance(
+                label="Import or export calendars",
+                element_type=AffordanceElementType.LINK,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+    )
+    manifest = make_manifest("admin", [dashboard, target])
+    task = TaskSpec(
+        task_id="calendar",
+        role_profile="admin",
+        starting_page_type=PageType.DASHBOARD,
+        target_page_type=PageType.CALENDAR,
+        success_hint="Reach a calendar page from the dashboard.",
+    )
+
+    result = evaluate_task(task=task, manifest=manifest, workflow_graph=None)
+
+    assert result.status == TaskValidationStatus.PASS
+    assert result.candidate_path_page_types == ["dashboard", "calendar"]
+    assert result.best_path_confidence == 45
+    assert result.first_hop_quality >= 30

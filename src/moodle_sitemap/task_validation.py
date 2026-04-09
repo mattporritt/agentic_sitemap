@@ -1,32 +1,49 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+"""Task-oriented validation over saved crawl artifacts.
+
+This module keeps the high-level validation flow readable. The lower-level
+path, scoring, and affordance-selection helpers live in
+`task_validation_support.py`.
+"""
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import json
 
 from moodle_sitemap.models import (
-    EdgeRelevance,
-    EdgeWeight,
-    ImportanceLevel,
-    LikelyIntent,
-    PageRecord,
-    PageType,
     SiteManifest,
     TaskSpec,
     TaskSpecList,
     TaskValidationStatus,
     TaskValidationSummary,
     TaskValidationTaskResult,
-    WorkflowEdge,
-    WorkflowEdgeType,
     WorkflowGraph,
+)
+from moodle_sitemap.task_validation_support import (
+    choose_start_page,
+    collect_key_affordances,
+    collect_safety_notes,
+    find_best_path,
+    find_cluster_supported_path,
+    find_target_pages,
+    load_manifest,
+    load_workflow_graph,
+    render_task_validation_markdown,
+    score_affordance_support,
+    score_best_path_confidence,
+    score_first_hop_quality,
+    score_key_affordance_relevance,
+    score_next_step_support,
+    score_path_quality,
 )
 
 
 @dataclass(slots=True)
 class TaskValidationRunResult:
+    """Paths and parsed summary produced by one task-validation run."""
+
     output_dir: Path
     json_path: Path
     markdown_path: Path
@@ -34,6 +51,8 @@ class TaskValidationRunResult:
 
 
 def create_task_validation_run_dir(base_dir: str | Path = "task-validation-runs") -> Path:
+    """Create a timestamped output directory for task-validation artifacts."""
+
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
     root = Path(base_dir)
     for suffix in ["", "-2", "-3", "-4", "-5"]:
@@ -47,6 +66,8 @@ def create_task_validation_run_dir(base_dir: str | Path = "task-validation-runs"
 
 
 def load_task_specs(path: str | Path) -> TaskSpecList:
+    """Load and validate the checked-in task specification JSON."""
+
     spec_path = Path(path)
     try:
         return TaskSpecList.model_validate_json(spec_path.read_text(encoding="utf-8"))
@@ -62,6 +83,8 @@ def validate_tasks_for_run(
     tasks_path: str | Path,
     base_dir: str | Path = "task-validation-runs",
 ) -> TaskValidationRunResult:
+    """Validate the task pack against one saved crawl or discovery run."""
+
     run_path = Path(run_dir)
     manifest = load_manifest(run_path / "sitemap.json")
     workflow_graph = load_workflow_graph(run_path / "workflow-edges.json")
@@ -103,6 +126,8 @@ def evaluate_task(
     manifest: SiteManifest,
     workflow_graph: WorkflowGraph | None,
 ) -> TaskValidationTaskResult:
+    """Evaluate one task against a saved manifest and workflow graph."""
+
     pages_by_id = {page.page_id: page for page in manifest.pages}
     start_page = choose_start_page(task, manifest.pages)
     target_pages = find_target_pages(task, manifest.pages)
@@ -130,10 +155,7 @@ def evaluate_task(
         target_page_ids=set(target_page_ids),
     )
     if path_edges is None:
-        path_edges = find_cluster_supported_path(
-            start_page=start_page,
-            target_pages=target_pages,
-        )
+        path_edges = find_cluster_supported_path(start_page=start_page, target_pages=target_pages)
     if path_edges is None:
         result.status = TaskValidationStatus.PARTIAL
         result.blockers.append("no-plausible-path-in-graph")
@@ -186,398 +208,3 @@ def evaluate_task(
         result.notes.append("path-exists-but-next-steps-do-not-clearly-surface-it")
 
     return result
-
-
-def choose_start_page(task: TaskSpec, pages: list[PageRecord]) -> PageRecord | None:
-    if task.starting_url_contains:
-        for page in pages:
-            if task.starting_url_contains in page.normalized_url:
-                return page
-    if task.starting_page_type:
-        for page in pages:
-            if page.page_type == task.starting_page_type:
-                return page
-    return None
-
-
-def find_target_pages(task: TaskSpec, pages: list[PageRecord]) -> list[PageRecord]:
-    matches: list[PageRecord] = []
-    for page in pages:
-        if task.target_page_type and page.page_type != task.target_page_type:
-            continue
-        if task.target_route_family and not route_family(page.normalized_url).startswith(task.target_route_family):
-            continue
-        if task.target_url_contains and not all(needle in page.normalized_url for needle in task.target_url_contains):
-            continue
-        matches.append(page)
-    return matches
-
-
-def route_family(url: str) -> str:
-    path = url.split("://", 1)[-1]
-    if "/" not in path:
-        return "/"
-    return "/" + path.split("/", 1)[1].split("?", 1)[0]
-
-
-def find_best_path(
-    *,
-    workflow_graph: WorkflowGraph | None,
-    start_page_id: str,
-    target_page_ids: set[str],
-) -> list[WorkflowEdge] | None:
-    if start_page_id in target_page_ids:
-        return []
-    if workflow_graph is None:
-        return None
-
-    edges_by_source: dict[str, list[WorkflowEdge]] = defaultdict(list)
-    for edge in workflow_graph.edges:
-        if edge.to_page_id:
-            edges_by_source[edge.from_page_id].append(edge)
-
-    queue: deque[tuple[str, list[WorkflowEdge]]] = deque([(start_page_id, [])])
-    visited = {start_page_id}
-    while queue:
-        current_page_id, path_edges = queue.popleft()
-        for edge in sorted(edges_by_source.get(current_page_id, []), key=edge_sort_key):
-            if edge.to_page_id is None or edge.to_page_id in visited:
-                continue
-            next_path = [*path_edges, edge]
-            if edge.to_page_id in target_page_ids:
-                return next_path
-            visited.add(edge.to_page_id)
-            queue.append((edge.to_page_id, next_path))
-    return None
-
-
-def find_cluster_supported_path(
-    *,
-    start_page: PageRecord,
-    target_pages: list[PageRecord],
-) -> list[WorkflowEdge] | None:
-    target_by_url = {page.normalized_url: page for page in target_pages}
-    for cluster in start_page.background_navigation_clusters:
-        for target_url in cluster.representative_targets:
-            target_page = target_by_url.get(target_url)
-            if target_page is None:
-                continue
-            return [
-                WorkflowEdge(
-                    from_page_id=start_page.page_id,
-                    to_page_id=target_page.page_id,
-                    target_url=target_page.normalized_url,
-                    target_page_type=target_page.page_type,
-                    edge_type=WorkflowEdgeType.NAVIGATION,
-                    edge_weight=EdgeWeight.LOW,
-                    edge_relevance=EdgeRelevance.SUPPORT,
-                    source_affordance_label="Calendar",
-                    source_affordance_kind="background_cluster",
-                    confidence=0.45,
-                    reason_hint="background-cluster-first-hop",
-                    notes="background-cluster-first-hop",
-                )
-            ]
-    return None
-
-
-def edge_sort_key(edge: WorkflowEdge) -> tuple[int, int, float]:
-    relevance_rank = {
-        EdgeRelevance.TASK: 0,
-        EdgeRelevance.SUPPORT: 1,
-        EdgeRelevance.NAVIGATION: 2,
-        EdgeRelevance.CONTEXTUAL: 3,
-    }[edge.edge_relevance]
-    weight_rank = {
-        EdgeWeight.HIGH: 0,
-        EdgeWeight.MEDIUM: 1,
-        EdgeWeight.LOW: 2,
-    }[edge.edge_weight]
-    confidence = -(edge.confidence or 0.0)
-    return (relevance_rank, weight_rank, confidence)
-
-
-def score_path_quality(edges: list[WorkflowEdge]) -> int:
-    if not edges:
-        return 100
-    score = 100
-    for edge in edges:
-        score -= {
-            EdgeRelevance.TASK: 4,
-            EdgeRelevance.SUPPORT: 8,
-            EdgeRelevance.NAVIGATION: 14,
-            EdgeRelevance.CONTEXTUAL: 22,
-        }[edge.edge_relevance]
-        score -= {
-            EdgeWeight.HIGH: 2,
-            EdgeWeight.MEDIUM: 6,
-            EdgeWeight.LOW: 10,
-        }[edge.edge_weight]
-    return max(0, min(100, score))
-
-
-def score_next_step_support(start_page: PageRecord, path_edges: list[WorkflowEdge]) -> int:
-    if not path_edges:
-        return 100
-    first_edge = path_edges[0]
-    labels = {step.label for step in start_page.next_steps if step.label}
-    urls = {step.target_url for step in start_page.next_steps}
-    page_ids = {step.page_id for step in start_page.next_steps if step.page_id}
-    target_types = {step.target_page_type for step in start_page.next_steps if step.target_page_type}
-    if first_edge.target_url in urls:
-        return 100
-    if first_edge.to_page_id and first_edge.to_page_id in page_ids:
-        return 95
-    if first_edge.target_page_type and first_edge.target_page_type in target_types:
-        return 80
-    if first_edge.source_affordance_label and first_edge.source_affordance_label in labels:
-        return 85
-    return 20
-
-
-def score_first_hop_quality(start_page: PageRecord, path_edges: list[WorkflowEdge]) -> int:
-    if not path_edges:
-        return 0
-    first_edge = path_edges[0]
-    score = score_next_step_support(start_page, path_edges)
-    score += {
-        EdgeRelevance.TASK: 20,
-        EdgeRelevance.SUPPORT: 12,
-        EdgeRelevance.NAVIGATION: 6,
-        EdgeRelevance.CONTEXTUAL: 0,
-    }[first_edge.edge_relevance]
-    score += {
-        EdgeWeight.HIGH: 10,
-        EdgeWeight.MEDIUM: 6,
-        EdgeWeight.LOW: 0,
-    }[first_edge.edge_weight]
-    return min(100, score)
-
-
-def score_best_path_confidence(path_edges: list[WorkflowEdge]) -> int:
-    if not path_edges:
-        return 0
-    average = sum(edge.confidence or 0.0 for edge in path_edges) / len(path_edges)
-    return round(average * 100)
-
-
-def score_affordance_support(task: TaskSpec, target_pages: list[PageRecord]) -> int:
-    if not target_pages:
-        return 0
-    if not task.required_affordance_intents:
-        return 70
-    intents = set(task.required_affordance_intents)
-    best = 0
-    for page in target_pages:
-        page_intents = {
-            action.likely_intent for action in page.affordances.actions
-        } | {
-            form.likely_intent for form in page.affordances.forms
-        } | {
-            nav.likely_intent for nav in page.affordances.navigation
-        }
-        overlap = len(intents & page_intents)
-        if overlap == 0:
-            continue
-        best = max(best, min(100, 40 + overlap * 30))
-    return best
-
-
-def collect_key_affordances(task: TaskSpec, target_pages: list[PageRecord]) -> list[str]:
-    ranked = rank_task_affordances(task, target_pages)
-    labels: list[str] = []
-    for _, label in ranked:
-        if label in labels:
-            continue
-        labels.append(label)
-        if len(labels) >= 8:
-            break
-    return labels
-
-
-def score_key_affordance_relevance(task: TaskSpec, target_pages: list[PageRecord]) -> int:
-    ranked = rank_task_affordances(task, target_pages)
-    if not ranked:
-        return 0
-    top_scores = [score for score, _ in ranked[:3]]
-    return min(100, round(sum(top_scores) / len(top_scores)))
-
-
-def rank_task_affordances(task: TaskSpec, target_pages: list[PageRecord]) -> list[tuple[int, str]]:
-    preferred_intents = set(task.required_affordance_intents)
-    ranked: list[tuple[int, str]] = []
-    for page in target_pages[:3]:
-        for action in page.affordances.actions:
-            if is_generic_affordance_label(action.label):
-                continue
-            score = score_action_affordance(task, page, action.label, action.likely_intent, action.importance_level, action.prominence_score)
-            ranked.append((score, action.label))
-        for form in page.affordances.forms:
-            label = most_relevant_form_label(form)
-            if is_generic_affordance_label(label):
-                continue
-            score = 35
-            if preferred_intents and form.likely_intent in preferred_intents:
-                score += 35
-            if form.likely_intent == page.primary_page_intent:
-                score += 20
-            score += {
-                ImportanceLevel.PRIMARY: 10,
-                ImportanceLevel.SECONDARY: 6,
-                ImportanceLevel.TERTIARY: 2,
-            }[form.importance_level]
-            ranked.append((score, label))
-        for nav in page.affordances.navigation:
-            if is_generic_affordance_label(nav.label):
-                continue
-            score = 20
-            if preferred_intents and nav.likely_intent in preferred_intents:
-                score += 25
-            if nav.likely_intent == page.primary_page_intent:
-                score += 15
-            score += {
-                ImportanceLevel.PRIMARY: 12,
-                ImportanceLevel.SECONDARY: 6,
-                ImportanceLevel.TERTIARY: 2,
-            }[nav.importance_level]
-            ranked.append((score, nav.label))
-    return sorted(ranked, key=lambda item: (-item[0], item[1].lower()))
-
-
-def score_action_affordance(
-    task: TaskSpec,
-    page: PageRecord,
-    label: str,
-    intent: LikelyIntent,
-    importance: ImportanceLevel,
-    prominence_score: int,
-) -> int:
-    preferred_intents = set(task.required_affordance_intents)
-    score = 20 + min(prominence_score, 40)
-    if preferred_intents and intent in preferred_intents:
-        score += 30
-    if intent == page.primary_page_intent:
-        score += 20
-    if keyword_alignment(task, label):
-        score += 20
-    score += {
-        ImportanceLevel.PRIMARY: 12,
-        ImportanceLevel.SECONDARY: 6,
-        ImportanceLevel.TERTIARY: 2,
-    }[importance]
-    return score
-
-
-def keyword_alignment(task: TaskSpec, label: str) -> bool:
-    lowered = label.lower()
-    keywords = [
-        "profile",
-        "preference",
-        "notification",
-        "message",
-        "calendar",
-        "grade",
-        "blog",
-        "forum",
-        "private files",
-        "ai",
-        "registration",
-        "course",
-        "edit",
-        "setting",
-    ]
-    return any(word in lowered and word in task.success_hint.lower() for word in keywords)
-
-
-def most_relevant_form_label(form) -> str:
-    for submit in form.submit_controls:
-        if submit.label and not is_generic_affordance_label(submit.label):
-            return submit.label
-    if form.id:
-        return form.id
-    return form.purpose.value
-
-
-def is_generic_affordance_label(label: str | None) -> bool:
-    if not label:
-        return True
-    lowered = label.strip().lower()
-    generic = {
-        "skip to main content",
-        "moodle demo",
-        "dashboard",
-        "message",
-        "got it",
-        "collapse",
-        "open block drawer",
-        "tt",
-        "st",
-        "au",
-    }
-    if lowered in generic:
-        return True
-    if lowered.startswith("0 there are "):
-        return True
-    if lowered.startswith("skip "):
-        return True
-    return False
-
-
-def collect_safety_notes(target_pages: list[PageRecord]) -> list[str]:
-    notes: list[str] = []
-    for page in target_pages[:2]:
-        if page.safety.contains_destructive_actions:
-            notes.append(f"{page.page_id}: contains destructive-looking actions")
-        elif page.safety.contains_mutating_actions:
-            notes.append(f"{page.page_id}: contains mutating-looking actions")
-    return notes[:4]
-
-
-def load_manifest(path: Path) -> SiteManifest:
-    return SiteManifest.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def load_workflow_graph(path: Path) -> WorkflowGraph | None:
-    if not path.exists():
-        return None
-    return WorkflowGraph.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def render_task_validation_markdown(summary: TaskValidationSummary) -> str:
-    lines = [
-        "# Task Validation",
-        "",
-        f"- Run: `{summary.run_dir}`",
-        f"- Role: `{summary.role_profile}`",
-        f"- Tasks file: `{summary.tasks_file}`",
-        f"- Total tasks: `{summary.total_tasks}`",
-        f"- Pass: `{summary.pass_count}`",
-        f"- Partial: `{summary.partial_count}`",
-        f"- Fail: `{summary.fail_count}`",
-        "",
-    ]
-    for result in summary.results:
-        lines.extend(
-            [
-                f"## {result.task_id}",
-                f"- Status: `{result.status.value}`",
-                f"- Path length: `{result.path_length}`",
-                f"- Path quality: `{result.path_quality_score}`",
-                f"- Best path confidence: `{result.best_path_confidence}`",
-                f"- First-hop quality: `{result.first_hop_quality}`",
-                f"- Next-step support: `{result.next_step_support_score}`",
-                f"- Affordance support: `{result.affordance_support_score}`",
-                f"- Key-affordance relevance: `{result.key_affordance_relevance}`",
-                f"- Discovered target: `{result.discovered_target}`",
-            ]
-        )
-        if result.candidate_path_urls:
-            lines.append(f"- Candidate path: `{result.candidate_path_urls}`")
-        if result.key_affordances:
-            lines.append(f"- Key affordances: `{result.key_affordances}`")
-        if result.blockers:
-            lines.append(f"- Blockers: `{result.blockers}`")
-        if result.notes:
-            lines.append(f"- Notes: `{result.notes}`")
-        lines.append("")
-    return "\n".join(lines)

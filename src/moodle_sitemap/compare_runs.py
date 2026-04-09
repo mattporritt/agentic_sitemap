@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Compare two saved crawl or discovery runs.
+
+The comparison layer is intentionally artifact-driven: it reads the saved
+manifest and workflow graph for each run and then explains how visibility,
+affordances, next steps, and safety differ.
+"""
+
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +17,8 @@ from moodle_sitemap.models import EdgeRelevance, RunComparisonSummary, SiteManif
 
 @dataclass(slots=True)
 class RunCompareResult:
+    """File paths and parsed summary produced by `compare_runs`."""
+
     output_dir: Path
     json_path: Path
     markdown_path: Path
@@ -17,6 +26,8 @@ class RunCompareResult:
 
 
 def create_compare_run_dir(base_dir: str | Path = "comparison-runs") -> Path:
+    """Create a unique timestamped directory for a comparison report."""
+
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
     root = Path(base_dir)
     for suffix in ["", "-2", "-3", "-4", "-5"]:
@@ -35,6 +46,8 @@ def compare_runs(
     right_run_dir: str | Path,
     base_dir: str | Path = "comparison-runs",
 ) -> RunCompareResult:
+    """Compare two saved runs and write JSON/Markdown comparison artifacts."""
+
     left_dir = Path(left_run_dir)
     right_dir = Path(right_run_dir)
     left_manifest = load_manifest(left_dir / "sitemap.json")
@@ -73,6 +86,8 @@ def build_run_comparison_summary(
     left_graph: WorkflowGraph | None,
     right_graph: WorkflowGraph | None,
 ) -> RunComparisonSummary:
+    """Build the structured difference summary between two saved runs."""
+
     left_pages = {page.normalized_url: page for page in left_manifest.pages}
     right_pages = {page.normalized_url: page for page in right_manifest.pages}
     shared_urls = sorted(set(left_pages) & set(right_pages))
@@ -117,6 +132,8 @@ def build_run_comparison_summary(
 
 
 def build_affordance_differences(left_pages: dict[str, object], right_pages: dict[str, object]) -> list[dict[str, object]]:
+    """Summarize action-label differences on shared pages."""
+
     differences: list[dict[str, object]] = []
     common_urls = sorted(set(left_pages) & set(right_pages))
     for url in common_urls:
@@ -141,6 +158,8 @@ def build_affordance_differences(left_pages: dict[str, object], right_pages: dic
 
 
 def build_next_step_differences(left_pages: dict[str, object], right_pages: dict[str, object]) -> list[dict[str, object]]:
+    """Summarize `next_steps` differences on shared pages."""
+
     differences: list[dict[str, object]] = []
     common_urls = sorted(set(left_pages) & set(right_pages))
     for url in common_urls:
@@ -165,6 +184,8 @@ def build_next_step_differences(left_pages: dict[str, object], right_pages: dict
 
 
 def build_safety_differences(left_pages: dict[str, object], right_pages: dict[str, object]) -> list[dict[str, object]]:
+    """Summarize page-level safety differences on shared pages."""
+
     differences: list[dict[str, object]] = []
     common_urls = sorted(set(left_pages) & set(right_pages))
     for url in common_urls:

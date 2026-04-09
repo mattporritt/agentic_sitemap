@@ -10,6 +10,18 @@ Moodle sites are heavily authenticated, dynamic, and often shaped by role-based 
 
 This project is also intentionally AI agnostic. The core crawler does not depend on LLMs, agent frameworks, LangChain, MCP, or SQLite.
 
+## What problem it solves
+
+Moodle is difficult to map with lightweight crawlers because the useful surface area is mostly authenticated, role-sensitive, and rendered dynamically in the browser. `moodle-sitemap` solves that by turning a real authenticated browser session into durable site-intelligence artifacts that downstream tools can inspect without replaying the live UI.
+
+Today that means the project is especially useful for:
+
+- identifying what authenticated pages exist for a given role
+- understanding what a page appears to be for
+- surfacing likely next navigation steps without clicking anything
+- comparing visibility and affordances across admin, teacher, and student runs
+- validating whether the saved graph is already good enough for representative Moodle tasks
+
 ## Current scope
 
 Phase 1 currently does the following:
@@ -29,6 +41,14 @@ Phase 1 currently does the following:
 - captures Moodle footer performance or debug information when present
 - writes a top-level `sitemap.json` plus one JSON file per page
 - classifies pages into a small Moodle-aware set of page types
+
+Later Phase 2 additions build on that same crawl:
+
+- structured affordance extraction
+- workflow edges and `next_steps`
+- safety metadata
+- role-aware run comparison
+- task-oriented validation over saved artifacts
 
 Initial page types:
 
@@ -151,6 +171,14 @@ Treat this as a dev/test workflow, not a production recommendation. The broader 
 - [Moodle site preparation guide](docs/moodle-site-preparation.md)
 
 ## Usage
+
+The workflows intentionally build on one another:
+
+- `smoke` proves login, browser startup, and basic post-login capture
+- `verify` produces a small, timestamped regression snapshot
+- `discover` produces a broader but still bounded site-intelligence run
+- `compare-runs` explains how two saved runs differ
+- `validate-tasks` checks whether saved artifacts support representative tasks without executing them
 
 ### Smoke test
 
@@ -402,6 +430,12 @@ Each task result includes lightweight path-support hints such as:
 - `best_path_confidence`
 - `first_hop_quality`
 - `key_affordance_relevance`
+
+## Architecture and maintenance notes
+
+For a maintainer-oriented walkthrough of module boundaries, artifact lifecycle, invariants, extension rules, and testing strategy, see:
+
+- [Architecture and developer guide](docs/architecture.md)
 
 ## Output layout
 
@@ -769,7 +803,21 @@ The structure is meant to stay stable as the project grows into a broader Moodle
 
 ## Testing
 
-This repo includes unit tests for:
+Run the full suite:
+
+```bash
+pytest
+```
+
+Useful narrower subsets during development:
+
+```bash
+pytest tests/test_page_type.py tests/test_workflow.py
+pytest tests/test_task_validation.py tests/test_compare_runs.py
+pytest tests/test_schema.py tests/test_discovery.py
+```
+
+This repo includes:
 
 - config loading and browser-engine validation
 - URL normalization
@@ -778,10 +826,24 @@ This repo includes unit tests for:
 - footer or debug parsing
 - body and breadcrumb normalization
 - network redaction and recorder behavior
+- workflow derivation, weighting, de-noising, and compression
+- comparison and task-validation logic
+- artifact serialization contracts and regression cases
 
 Browser end-to-end testing is intentionally minimal in this phase. Logic that would be hard to test through Playwright is isolated into small pure functions.
+
+## Current limitations
+
+The project is intentionally conservative:
+
+- it does not execute workflows or submit forms
+- safety hints are heuristic and may be noisy on complex admin pages
+- some page families still use practical buckets such as `user_settings_page` rather than many micro-types
+- weaker social surfaces such as forum-user pages are now discoverable, but still less strongly supported than admin, course, and preference flows
+- discovery quality still depends on what the selected role can actually see
 
 ## Further reading
 
 - [Preparing a Moodle site for crawling](docs/moodle-site-preparation.md)
 - [Verification runs](docs/verification-runs.md)
+- [Architecture and developer guide](docs/architecture.md)

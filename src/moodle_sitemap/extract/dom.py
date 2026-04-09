@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""DOM extraction for page features and affordances.
+
+This module does the heaviest browser-side extraction in the project. It
+captures visible controls, form structure, navigation, and lightweight page
+purpose hints without interacting with the page.
+"""
+
 from collections import Counter
 import re
 from typing import TYPE_CHECKING
@@ -84,6 +91,8 @@ SORT_KEYWORDS = {"sort", "order"}
 
 
 def extract_anchor_hrefs(page: Page) -> list[str]:
+    """Return all anchor hrefs from the rendered page."""
+
     return page.evaluate(
         """
         () => Array.from(document.querySelectorAll("a[href]"))
@@ -94,6 +103,14 @@ def extract_anchor_hrefs(page: Page) -> list[str]:
 
 
 def extract_page_features(page: Page) -> PageFeatures:
+    """Extract page metadata, affordances, and task-summary hints.
+
+    The browser-side payload intentionally returns plain scalars and small
+    JSON-compatible structures. Normalization happens again in Python so that
+    malformed or surprising markup cannot leak complex values into the saved
+    schema.
+    """
+
     payload = page.evaluate(
         """
         () => {
