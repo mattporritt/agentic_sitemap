@@ -395,6 +395,14 @@ Task validation is different from discovery and run comparison:
 - compare-runs asks how two saved runs differ
 - task validation asks whether the current saved model is strong enough to support representative agent-facing tasks
 
+Task validation also tries to surface the most relevant controls for the task instead of the first visible controls on the page. It ranks candidate affordances using page type, target route family, `likely_intent`, `importance_level`, form purpose, and alignment with the page's primary intent.
+
+Each task result includes lightweight path-support hints such as:
+
+- `best_path_confidence`
+- `first_hop_quality`
+- `key_affordance_relevance`
+
 ## Output layout
 
 Example output:
@@ -445,6 +453,9 @@ Each crawled page record includes:
 - `url`: the requested URL
 - `final_url`: the final browser URL after navigation
 - `normalized_url`: the canonicalized crawl URL used for de-duplication and stable reporting
+- `primary_page_intent`: the top-level derived intent used by graph ranking and task validation
+- `primary_actions`: the top few action labels supporting that intent
+- `task_relevance_score`: a compact page-purpose strength hint
 - `affordances`: structured agent-usable UI understanding without interaction
 - `task_summary`: compact page-purpose hints derived from the strongest visible affordances and page context
 - `next_steps`: compact likely next-page candidates derived from the workflow edge layer
@@ -570,7 +581,7 @@ These are deterministic heuristics based on visible labels, classes, button type
 
 ### Primary page intent
 
-Each page record includes a `task_summary.primary_page_intent` hint. This is a compact best-effort signal for what the page is mainly for, using cues such as:
+Each page record includes a top-level `primary_page_intent` hint, with the same value also preserved under `task_summary.primary_page_intent`. This is a compact best-effort signal for what the page is mainly for, using cues such as:
 
 - page type
 - prominent actions
@@ -580,7 +591,7 @@ Each page record includes a `task_summary.primary_page_intent` hint. This is a c
 
 Typical values include `navigate`, `configure`, `edit`, `search`, `message`, `report`, `upload`, `view`, or `unknown`.
 
-This value is used to make `next_steps` cleaner and more task-aligned. It is still heuristic, not a guarantee.
+This value is used to make `next_steps` cleaner and more task-aligned, and it is serialized directly on the page record because task validation and downstream packaging rely on it. It is still heuristic, not a guarantee.
 
 ### Background navigation clusters
 
@@ -636,6 +647,9 @@ Example page record shape:
   "final_url": "https://example.com/my",
   "title": "Dashboard | Moodle Demo",
   "page_type": "dashboard",
+  "primary_page_intent": "navigate",
+  "primary_actions": ["Course 1", "Course 2", "Calendar"],
+  "task_relevance_score": 76,
   "safety": {
     "page_risk_level": "medium",
     "contains_mutating_actions": true,
@@ -652,6 +666,7 @@ Example page record shape:
     {
       "page_id": "0016-course-view-php-id-4",
       "target_url": "https://example.com/course/view.php?id=4",
+      "target_page_type": "course_view",
       "edge_type": "navigation",
       "edge_weight": "high",
       "edge_relevance": "task",

@@ -180,7 +180,7 @@ def build_discovery_summary(
         top_compressed_route_families=top_compressed_route_families(run_dir),
         pages_with_most_compression=pages_with_most_compression(run_dir, pages),
         strongest_primary_pages=strongest_primary_pages(pages),
-        intent_populated_pages=sum(1 for page in pages if page.task_summary.primary_page_intent.value != "unknown"),
+        intent_populated_pages=sum(1 for page in pages if page.primary_page_intent.value != "unknown"),
         materially_changed_next_steps=load_materially_changed_next_steps(run_dir),
     )
 
@@ -470,7 +470,7 @@ def strongest_primary_pages(pages: list[PageRecord]) -> list[dict[str, int | str
     ranked_pages = sorted(
         pages,
         key=lambda page: (
-            -(page.task_summary.task_relevance_score or 0),
+            -(page.task_relevance_score or 0),
             page.page_id,
         ),
     )[:5]
@@ -478,8 +478,8 @@ def strongest_primary_pages(pages: list[PageRecord]) -> list[dict[str, int | str
         {
             "page_id": page.page_id,
             "page_type": page.page_type.value,
-            "primary_page_intent": page.task_summary.primary_page_intent.value,
-            "task_relevance_score": page.task_summary.task_relevance_score,
+            "primary_page_intent": page.primary_page_intent.value,
+            "task_relevance_score": page.task_relevance_score,
         }
         for page in ranked_pages
     ]

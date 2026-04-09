@@ -6,6 +6,7 @@ from moodle_sitemap.models import (
     ActionAffordance,
     AffordanceElementType,
     BrowserEngine,
+    LikelyIntent,
     NextStepHint,
     PageRiskLevel,
     PageSafetySummary,
@@ -76,6 +77,9 @@ def test_page_record_serializes_flat_schema_fields() -> None:
                 )
             ]
         ),
+        primary_page_intent=LikelyIntent.NAVIGATE,
+        primary_actions=["Turn editing on"],
+        task_relevance_score=72,
         safety=PageSafetySummary(page_risk_level=PageRiskLevel.MEDIUM, contains_mutating_actions=True),
         discovered_links=[],
         network=[],
@@ -88,6 +92,9 @@ def test_page_record_serializes_flat_schema_fields() -> None:
     assert dumped["body_classes"] == ["path-my", "theme"]
     assert dumped["breadcrumbs"] == ["Dashboard"]
     assert dumped["affordances"]["actions"][0]["action_key"] == "turn-editing-on"
+    assert dumped["primary_page_intent"] == "navigate"
+    assert dumped["primary_actions"] == ["Turn editing on"]
+    assert dumped["task_relevance_score"] == 72
     assert dumped["safety"]["page_risk_level"] == "medium"
     assert dumped["next_steps"] == []
     assert "features" not in dumped
@@ -168,6 +175,7 @@ def test_page_record_serializes_next_steps() -> None:
             NextStepHint(
                 page_id="0002-course",
                 target_url="https://example.com/course/view.php?id=4",
+                target_page_type=PageType.COURSE_VIEW,
                 edge_type="navigation",
                 label="Course 1",
                 confidence=0.95,
@@ -182,3 +190,4 @@ def test_page_record_serializes_next_steps() -> None:
 
     assert dumped["next_steps"][0]["edge_type"] == "navigation"
     assert dumped["next_steps"][0]["page_id"] == "0002-course"
+    assert dumped["next_steps"][0]["target_page_type"] == "course_view"

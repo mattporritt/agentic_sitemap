@@ -19,7 +19,11 @@ from moodle_sitemap.models import (
     WorkflowEdgeType,
     WorkflowGraph,
 )
-from moodle_sitemap.task_validation import evaluate_task, load_task_specs
+from moodle_sitemap.task_validation import (
+    collect_key_affordances,
+    evaluate_task,
+    load_task_specs,
+)
 
 
 def make_page(
@@ -154,6 +158,7 @@ def test_evaluate_task_passes_when_target_and_path_are_clear() -> None:
     assert result.status == TaskValidationStatus.PASS
     assert result.path_length == 1
     assert result.next_steps_helpful is True
+    assert result.first_hop_quality >= 90
 
 
 def test_evaluate_task_is_partial_when_target_exists_without_path() -> None:
@@ -202,3 +207,40 @@ def test_evaluate_task_fails_when_target_is_missing() -> None:
 
     assert result.status == TaskValidationStatus.FAIL
     assert "target-page-not-found" in result.blockers
+
+
+def test_collect_key_affordances_prefers_task_relevant_controls_over_generic_links() -> None:
+    target = make_page(
+        "0002-msgprefs",
+        "https://example.com/message/notificationpreferences.php",
+        page_type=PageType.MESSAGE_PREFERENCES,
+        actions=[
+            ActionAffordance(
+                label="Skip to main content",
+                element_type=AffordanceElementType.LINK,
+                likely_intent=LikelyIntent.NAVIGATE,
+            ),
+            ActionAffordance(
+                label="Notification preferences",
+                element_type=AffordanceElementType.LINK,
+                likely_intent=LikelyIntent.CONFIGURE,
+            ),
+            ActionAffordance(
+                label="Message email notifications",
+                element_type=AffordanceElementType.LINK,
+                likely_intent=LikelyIntent.CONFIGURE,
+            ),
+        ],
+    )
+    task = TaskSpec(
+        task_id="message-preferences",
+        role_profile="student",
+        target_page_type=PageType.MESSAGE_PREFERENCES,
+        required_affordance_intents=[LikelyIntent.CONFIGURE],
+        success_hint="Reach message preferences",
+    )
+
+    labels = collect_key_affordances(task, [target])
+
+    assert labels[:2] == ["Message email notifications", "Notification preferences"]
+    assert "Skip to main content" not in labels

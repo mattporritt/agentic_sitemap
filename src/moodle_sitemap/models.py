@@ -270,6 +270,7 @@ class WorkflowEdge(StrictModel):
     from_page_id: str
     to_page_id: str | None = None
     target_url: str
+    target_page_type: PageType | None = None
     edge_type: WorkflowEdgeType = WorkflowEdgeType.RELATED
     source_affordance_label: str | None = None
     source_affordance_kind: str | None = None
@@ -295,6 +296,7 @@ class BackgroundNavigationCluster(StrictModel):
 class NextStepHint(StrictModel):
     page_id: str | None = None
     target_url: str
+    target_page_type: PageType | None = None
     edge_type: WorkflowEdgeType = WorkflowEdgeType.RELATED
     edge_weight: EdgeWeight = EdgeWeight.LOW
     edge_relevance: EdgeRelevance = EdgeRelevance.CONTEXTUAL
@@ -369,6 +371,9 @@ class PageRecord(StrictModel):
     breadcrumbs: list[str] = Field(default_factory=list)
     affordances: PageAffordances = Field(default_factory=PageAffordances)
     task_summary: PageTaskSummary = Field(default_factory=PageTaskSummary)
+    primary_page_intent: LikelyIntent = LikelyIntent.UNKNOWN
+    primary_actions: list[str] = Field(default_factory=list)
+    task_relevance_score: int = 0
     safety: PageSafetySummary = Field(default_factory=PageSafetySummary)
     next_steps: list[NextStepHint] = Field(default_factory=list)
     background_navigation_clusters: list[BackgroundNavigationCluster] = Field(default_factory=list)
@@ -520,8 +525,11 @@ class TaskValidationTaskResult(StrictModel):
     candidate_path_page_types: list[str] = Field(default_factory=list)
     path_length: int | None = None
     path_quality_score: int = 0
+    best_path_confidence: int = 0
+    first_hop_quality: int = 0
     next_step_support_score: int = 0
     affordance_support_score: int = 0
+    key_affordance_relevance: int = 0
     next_steps_helpful: bool = False
     discovered_target: bool = False
     key_affordances: list[str] = Field(default_factory=list)

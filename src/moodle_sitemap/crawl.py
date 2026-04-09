@@ -139,6 +139,7 @@ def crawl_site(
                 )
 
                 page_type = classify_page(normalized_url, features)
+                refined_task_summary = refine_task_summary_for_page_type(page_type, features.task_summary)
                 page_record = PageRecord(
                     page_id=make_page_id(len(page_records) + 1, normalized_url),
                     url=target_url,
@@ -152,7 +153,10 @@ def crawl_site(
                     body_classes=features.body_classes,
                     breadcrumbs=features.breadcrumbs,
                     affordances=features.affordances,
-                    task_summary=refine_task_summary_for_page_type(page_type, features.task_summary),
+                    task_summary=refined_task_summary,
+                    primary_page_intent=refined_task_summary.primary_page_intent,
+                    primary_actions=refined_task_summary.primary_actions,
+                    task_relevance_score=refined_task_summary.task_relevance_score,
                     safety=summarize_page_safety(features.affordances),
                     footer=extract_footer_info(session.page),
                     discovered_links=discovered_links,

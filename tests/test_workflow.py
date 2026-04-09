@@ -76,6 +76,7 @@ def test_derive_workflow_graph_links_dashboard_to_course_navigation() -> None:
     assert dashboard.next_steps[0] == NextStepHint(
         page_id="0002-course",
         target_url="https://example.com/course/view.php?id=4",
+        target_page_type=PageType.COURSE_VIEW,
         edge_type=WorkflowEdgeType.NAVIGATION,
         edge_weight=EdgeWeight.HIGH,
         edge_relevance=EdgeRelevance.TASK,
@@ -199,6 +200,32 @@ def test_next_steps_prefers_primary_task_edges_over_generic_navigation() -> None
     assert course.next_steps[0].page_id == "0002-edit"
     assert course.next_steps[0].edge_relevance == EdgeRelevance.TASK
     assert course.next_steps[0].edge_weight == EdgeWeight.HIGH
+
+
+def test_dashboard_next_steps_keep_secondary_user_surface_hops() -> None:
+    dashboard = make_page(
+        "0001-my",
+        "https://example.com/my",
+        page_type=PageType.DASHBOARD,
+        task_summary=PageTaskSummary(primary_page_intent=LikelyIntent.NAVIGATE, task_relevance_score=80),
+    )
+    dashboard.discovered_links = [
+        "https://example.com/course/view.php?id=4",
+        "https://example.com/user/preferences.php",
+        "https://example.com/user/profile.php",
+        "https://example.com/calendar/view.php?view=month",
+    ]
+    course = make_page("0002-course", "https://example.com/course/view.php?id=4", page_type=PageType.COURSE_VIEW)
+    prefs = make_page("0003-prefs", "https://example.com/user/preferences.php", page_type=PageType.USER_PREFERENCES)
+    profile = make_page("0004-profile", "https://example.com/user/profile.php", page_type=PageType.USER_PROFILE)
+    calendar = make_page("0005-calendar", "https://example.com/calendar/view.php?view=month", page_type=PageType.CALENDAR)
+
+    derive_workflow_graph([dashboard, course, prefs, profile, calendar])
+
+    next_step_targets = [step.target_page_type for step in dashboard.next_steps]
+    assert next_step_targets[0] == PageType.COURSE_VIEW
+    assert PageType.USER_PREFERENCES in next_step_targets
+    assert PageType.USER_PROFILE in next_step_targets
 
 
 def test_admin_search_prefers_specific_setting_page_over_broad_admin_category() -> None:
@@ -336,6 +363,9 @@ def test_calendar_discovered_link_variants_are_grouped_for_same_source_page() ->
     assert graph.cluster_count == 1
     assert graph.compressed_edge_count == 1
     assert source.background_navigation_clusters[0].family_key == "/calendar/view.php"
+    assert source.next_steps[0].page_id == "0002-calendar"
+    assert source.next_steps[0].target_page_type == PageType.CALENDAR
+    assert source.next_steps[0].notes == "background-cluster-first-hop"
 
 
 def test_next_steps_drop_contextual_noise_when_task_edges_exist() -> None:
@@ -445,3 +475,4 @@ def test_calendar_low_value_edges_are_compressed_but_task_edges_remain() -> None
     assert graph.edges[0].to_page_id == "0002-course"
     assert graph.compressed_edge_count == 1
     assert source.background_navigation_clusters[0].family_key == "/calendar/view.php"
+    assert [step.page_id for step in source.next_steps] == ["0002-course", "0003-calendar"]

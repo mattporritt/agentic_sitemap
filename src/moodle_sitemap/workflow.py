@@ -49,8 +49,9 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
     suppressed_edge_count = max(len(candidate_edges) - len(edges), 0)
     edges, background_clusters, compressed_edge_count = compress_low_value_edges(pages, edges)
 
-    changed_pages = assign_next_steps(pages, edges, before_next_steps=before_next_steps)
     attach_background_clusters(pages, background_clusters)
+    changed_pages = assign_next_steps(pages, edges, before_next_steps=before_next_steps)
+    augment_next_steps_with_background_clusters(pages)
 
     edge_type_counts = {edge_type.value: 0 for edge_type in WorkflowEdgeType}
     edge_weight_counts = {edge_weight.value: 0 for edge_weight in EdgeWeight}
@@ -176,6 +177,7 @@ def build_edge(
         from_page_id=source_page.page_id,
         to_page_id=target_page.page_id,
         target_url=target_page.normalized_url,
+        target_page_type=target_page.page_type,
         edge_type=edge_type,
         source_affordance_label=candidate.label,
         source_affordance_kind=candidate.kind,
@@ -200,6 +202,22 @@ def infer_edge_type(
 
     if source_type == PageType.DASHBOARD and target_type == PageType.COURSE_VIEW:
         return WorkflowEdgeType.NAVIGATION, 0.95, "dashboard-to-course"
+
+    if source_type == PageType.DASHBOARD and target_type in {
+        PageType.USER_PREFERENCES,
+        PageType.USER_PROFILE,
+        PageType.USER_PROFILE_EDIT,
+        PageType.MESSAGE_PREFERENCES,
+        PageType.MESSAGES,
+        PageType.PRIVATE_FILES,
+        PageType.GRADEBOOK,
+        PageType.REPORT_BUILDER,
+        PageType.BLOG_PAGE,
+        PageType.FORUM_USER_PAGE,
+        PageType.CONTENT_BANK_PREFERENCES,
+        PageType.USER_SETTINGS_PAGE,
+    }:
+        return WorkflowEdgeType.NAVIGATION, 0.78, "dashboard-secondary-surface"
 
     if source_type == PageType.COURSE_VIEW and target_type == PageType.ACTIVITY_VIEW:
         return WorkflowEdgeType.ACTIVITY, 0.95, "course-to-activity"
@@ -301,6 +319,7 @@ def assign_next_steps(
             NextStepHint(
                 page_id=edge.to_page_id,
                 target_url=edge.target_url,
+                target_page_type=edge.target_page_type,
                 edge_type=edge.edge_type,
                 edge_weight=edge.edge_weight,
                 edge_relevance=edge.edge_relevance,
@@ -354,6 +373,23 @@ def infer_edge_weight(
 ) -> tuple[EdgeWeight, EdgeRelevance, str]:
     if edge_type in {WorkflowEdgeType.PREFERENCES, WorkflowEdgeType.EDIT, WorkflowEdgeType.ACTIVITY}:
         return EdgeWeight.HIGH, EdgeRelevance.TASK, f"{edge_type.value}-workflow"
+    if source_page.page_type == PageType.DASHBOARD and target_page.page_type == PageType.COURSE_VIEW:
+        return EdgeWeight.HIGH, EdgeRelevance.TASK, "dashboard-course-entry"
+    if source_page.page_type == PageType.DASHBOARD and target_page.page_type in {
+        PageType.USER_PREFERENCES,
+        PageType.USER_PROFILE,
+        PageType.USER_PROFILE_EDIT,
+        PageType.MESSAGE_PREFERENCES,
+        PageType.MESSAGES,
+        PageType.PRIVATE_FILES,
+        PageType.GRADEBOOK,
+        PageType.REPORT_BUILDER,
+        PageType.BLOG_PAGE,
+        PageType.FORUM_USER_PAGE,
+        PageType.CONTENT_BANK_PREFERENCES,
+        PageType.USER_SETTINGS_PAGE,
+    }:
+        return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "dashboard-secondary-surface"
     if edge_type == WorkflowEdgeType.SETTINGS:
         if candidate.importance == ImportanceLevel.PRIMARY or source_page.page_type in {
             PageType.COURSE_VIEW,
@@ -499,7 +535,7 @@ def source_importance_rank(value: ImportanceLevel | None) -> int:
 
 
 def intent_alignment_rank(page: PageRecord, edge: WorkflowEdge) -> int:
-    primary_intent = page.task_summary.primary_page_intent
+    primary_intent = page.primary_page_intent
     if primary_intent == LikelyIntent.UNKNOWN:
         return 1
     if infer_next_step_intent(edge) == primary_intent:
@@ -544,12 +580,61 @@ def rank_edges_for_next_steps(page: PageRecord, edges: list[WorkflowEdge]) -> li
     )
     if any(edge.edge_relevance in {EdgeRelevance.TASK, EdgeRelevance.SUPPORT} for edge in candidates):
         candidates = [edge for edge in candidates if edge.edge_relevance != EdgeRelevance.CONTEXTUAL]
-    if page.task_summary.primary_page_intent != LikelyIntent.UNKNOWN:
-        aligned = [edge for edge in candidates if infer_next_step_intent(edge) == page.task_summary.primary_page_intent]
+    if page.primary_page_intent != LikelyIntent.UNKNOWN:
+        aligned = [edge for edge in candidates if infer_next_step_intent(edge) == page.primary_page_intent]
         if aligned:
-            non_aligned = [edge for edge in candidates if infer_next_step_intent(edge) != page.task_summary.primary_page_intent]
+            non_aligned = [edge for edge in candidates if infer_next_step_intent(edge) != page.primary_page_intent]
             candidates = aligned + non_aligned
+    if page.page_type == PageType.DASHBOARD:
+        candidates = rebalance_dashboard_next_steps(candidates)
     return candidates
+
+
+def rebalance_dashboard_next_steps(edges: list[WorkflowEdge]) -> list[WorkflowEdge]:
+    if not edges:
+        return edges
+
+    selected: list[WorkflowEdge] = []
+    seen_target_types: set[PageType | None] = set()
+
+    for edge in edges:
+        if edge.edge_relevance == EdgeRelevance.TASK:
+            selected.append(edge)
+            seen_target_types.add(edge.target_page_type)
+            break
+
+    preferred_types = [
+        PageType.USER_PREFERENCES,
+        PageType.USER_PROFILE,
+        PageType.MESSAGE_PREFERENCES,
+        PageType.CALENDAR,
+        PageType.GRADEBOOK,
+        PageType.PRIVATE_FILES,
+        PageType.BLOG_PAGE,
+        PageType.FORUM_USER_PAGE,
+    ]
+    for preferred in preferred_types:
+        if len(selected) >= 4:
+            break
+        for edge in edges:
+            if edge in selected:
+                continue
+            if edge.target_page_type != preferred:
+                continue
+            if edge.target_page_type in seen_target_types:
+                continue
+            selected.append(edge)
+            seen_target_types.add(edge.target_page_type)
+            break
+
+    for edge in edges:
+        if len(selected) >= 4:
+            break
+        if edge in selected:
+            continue
+        selected.append(edge)
+
+    return selected
 
 
 def low_value_variant_group(url: str) -> str | None:
@@ -679,3 +764,38 @@ def attach_background_clusters(
         clusters_by_page[cluster.source_page_id].append(cluster)
     for page in pages:
         page.background_navigation_clusters = clusters_by_page.get(page.page_id, [])
+
+
+def augment_next_steps_with_background_clusters(pages: list[PageRecord]) -> None:
+    page_by_url = {page.normalized_url: page for page in pages}
+    for page in pages:
+        if page.page_type != PageType.DASHBOARD:
+            continue
+        if len(page.next_steps) >= 4:
+            continue
+        existing_targets = {step.target_url for step in page.next_steps}
+        for cluster in page.background_navigation_clusters:
+            if len(page.next_steps) >= 4:
+                break
+            if cluster.family_key not in {"/calendar/view.php", "/calendar/managesubscriptions.php"}:
+                continue
+            for target_url in cluster.representative_targets:
+                target_page = page_by_url.get(target_url)
+                if target_page is None or target_page.normalized_url in existing_targets:
+                    continue
+                page.next_steps.append(
+                    NextStepHint(
+                        page_id=target_page.page_id,
+                        target_url=target_page.normalized_url,
+                        target_page_type=target_page.page_type,
+                        edge_type=WorkflowEdgeType.NAVIGATION,
+                        edge_weight=EdgeWeight.LOW,
+                        edge_relevance=EdgeRelevance.SUPPORT,
+                        label="Calendar",
+                        confidence=0.45,
+                        likely_intent=LikelyIntent.NAVIGATE,
+                        notes="background-cluster-first-hop",
+                    )
+                )
+                existing_targets.add(target_page.normalized_url)
+                break
