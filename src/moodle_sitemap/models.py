@@ -484,3 +484,61 @@ class RunComparisonSummary(StrictModel):
     affordance_differences: list[dict[str, object]] = Field(default_factory=list)
     next_step_differences: list[dict[str, object]] = Field(default_factory=list)
     safety_differences: list[dict[str, object]] = Field(default_factory=list)
+
+
+class TaskValidationStatus(StrEnum):
+    PASS = "pass"
+    PARTIAL = "partial"
+    FAIL = "fail"
+
+
+class TaskSpec(StrictModel):
+    task_id: str
+    role_profile: str
+    starting_page_type: PageType | None = None
+    starting_url_contains: str | None = None
+    target_page_type: PageType | None = None
+    target_route_family: str | None = None
+    target_url_contains: list[str] = Field(default_factory=list)
+    expected_intermediate_page_types: list[PageType] = Field(default_factory=list)
+    required_affordance_intents: list[LikelyIntent] = Field(default_factory=list)
+    success_hint: str
+
+
+class TaskSpecList(StrictModel):
+    tasks: list[TaskSpec] = Field(default_factory=list)
+
+
+class TaskValidationTaskResult(StrictModel):
+    task_id: str
+    role_profile: str
+    status: TaskValidationStatus
+    starting_page_id: str | None = None
+    target_page_ids: list[str] = Field(default_factory=list)
+    candidate_path_page_ids: list[str] = Field(default_factory=list)
+    candidate_path_urls: list[str] = Field(default_factory=list)
+    candidate_path_page_types: list[str] = Field(default_factory=list)
+    path_length: int | None = None
+    path_quality_score: int = 0
+    next_step_support_score: int = 0
+    affordance_support_score: int = 0
+    next_steps_helpful: bool = False
+    discovered_target: bool = False
+    key_affordances: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    target_page_types: list[str] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+
+
+class TaskValidationSummary(StrictModel):
+    site_url: HttpUrl
+    role_profile: str
+    run_dir: str
+    tasks_file: str
+    validated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    total_tasks: int
+    pass_count: int = 0
+    partial_count: int = 0
+    fail_count: int = 0
+    results: list[TaskValidationTaskResult] = Field(default_factory=list)

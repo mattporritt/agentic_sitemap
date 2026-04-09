@@ -10,3 +10,4 @@ config.toml
 verification-runs/
 discovery-runs/
 comparison-runs/
+task-validation-runs/

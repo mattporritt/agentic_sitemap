@@ -8,6 +8,7 @@ from moodle_sitemap.compare_runs import compare_runs
 from moodle_sitemap.crawl import CrawlConfig, crawl_site, format_progress_line
 from moodle_sitemap.discovery import run_discovery
 from moodle_sitemap.smoke import run_smoke_test
+from moodle_sitemap.task_validation import validate_tasks_for_run
 from moodle_sitemap.verify import run_verification
 
 app = typer.Typer(help="Moodle-aware authenticated sitemap crawler.")
@@ -152,6 +153,27 @@ def compare_runs_command(
 
     typer.echo(
         f"Run comparison wrote {result.json_path} and {result.markdown_path} into {result.output_dir}"
+    )
+
+
+@app.command("validate-tasks")
+def validate_tasks_command(
+    run: Path = typer.Option(..., help="Path to the saved discovery or crawl run directory."),
+    tasks: Path = typer.Option(..., help="Path to the task-validation task spec JSON file."),
+    output_root: Path = typer.Option(
+        Path("task-validation-runs"),
+        help="Root directory for timestamped task-validation results.",
+    ),
+) -> None:
+    try:
+        result = validate_tasks_for_run(run_dir=run, tasks_path=tasks, base_dir=output_root)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(
+        f"Task validation wrote {result.json_path} and {result.markdown_path} into {result.output_dir}"
     )
 
 

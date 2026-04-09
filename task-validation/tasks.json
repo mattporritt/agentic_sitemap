@@ -1,0 +1,91 @@
+{
+  "tasks": [
+    {
+      "task_id": "admin-message-preferences-from-dashboard",
+      "role_profile": "admin",
+      "starting_page_type": "dashboard",
+      "target_page_type": "message_preferences",
+      "success_hint": "Find notification or message preference pages from the dashboard."
+    },
+    {
+      "task_id": "admin-private-files-from-dashboard",
+      "role_profile": "admin",
+      "starting_page_type": "dashboard",
+      "target_page_type": "private_files",
+      "success_hint": "Reach the private files page from the dashboard."
+    },
+    {
+      "task_id": "admin-calendar-from-dashboard",
+      "role_profile": "admin",
+      "starting_page_type": "dashboard",
+      "target_page_type": "calendar",
+      "success_hint": "Reach a calendar page from the dashboard."
+    },
+    {
+      "task_id": "admin-registration-settings",
+      "role_profile": "admin",
+      "starting_page_type": "dashboard",
+      "target_page_type": "admin_setting_page",
+      "target_url_contains": ["admin/registration/index.php"],
+      "success_hint": "Reach the registration admin settings page."
+    },
+    {
+      "task_id": "admin-ai-placement-settings",
+      "role_profile": "admin",
+      "starting_page_type": "dashboard",
+      "target_page_type": "admin_setting_page",
+      "target_url_contains": ["aiplacement"],
+      "success_hint": "Reach an AI-related admin configuration page."
+    },
+    {
+      "task_id": "teacher-profile-edit-from-dashboard",
+      "role_profile": "teacher",
+      "starting_page_type": "dashboard",
+      "target_page_type": "user_profile_edit",
+      "success_hint": "Find a teacher profile edit page from the dashboard."
+    },
+    {
+      "task_id": "teacher-course-view-with-configure-actions",
+      "role_profile": "teacher",
+      "starting_page_type": "dashboard",
+      "target_page_type": "course_view",
+      "required_affordance_intents": ["configure", "edit"],
+      "success_hint": "Reach a course page and expose likely edit or configure actions."
+    },
+    {
+      "task_id": "teacher-blog-surface",
+      "role_profile": "teacher",
+      "starting_page_type": "dashboard",
+      "target_page_type": "blog_page",
+      "success_hint": "Locate a blog-related page from the lower-privilege surface."
+    },
+    {
+      "task_id": "student-profile-edit-from-dashboard",
+      "role_profile": "student",
+      "starting_page_type": "dashboard",
+      "target_page_type": "user_profile_edit",
+      "success_hint": "Find a student profile edit page from the dashboard."
+    },
+    {
+      "task_id": "student-course-view",
+      "role_profile": "student",
+      "starting_page_type": "dashboard",
+      "target_page_type": "course_view",
+      "success_hint": "Reach a student course page from the dashboard."
+    },
+    {
+      "task_id": "student-gradebook-view",
+      "role_profile": "student",
+      "starting_page_type": "dashboard",
+      "target_page_type": "gradebook",
+      "success_hint": "Reach a gradebook or report page from the dashboard."
+    },
+    {
+      "task_id": "student-forum-user-page",
+      "role_profile": "student",
+      "starting_page_type": "dashboard",
+      "target_page_type": "forum_user_page",
+      "success_hint": "Locate a forum-user page from the lower-privilege surface."
+    }
+  ]
+}

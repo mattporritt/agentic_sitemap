@@ -363,6 +363,38 @@ The comparison focuses on:
 - `next_steps` differences on shared pages
 - safety/risk differences on shared pages
 
+### Task validation
+
+Task validation checks whether saved crawl artifacts are already good enough to support a small set of realistic Moodle tasks. It does not drive the browser. It evaluates saved page types, workflow edges, `next_steps`, affordances, and safety hints.
+
+Run task validation against a saved run:
+
+```bash
+moodle-sitemap validate-tasks \
+  --run ./discovery-runs/2026-04-08T230425Z \
+  --tasks ./task-validation/tasks.json
+```
+
+This writes a timestamped result under `task-validation-runs/` with:
+
+- `task-validation.json`
+- `task-validation.md`
+
+Example output:
+
+```text
+task-validation-runs/
+  2026-04-09T110000Z/
+    task-validation.json
+    task-validation.md
+```
+
+Task validation is different from discovery and run comparison:
+
+- discovery asks what pages and paths exist
+- compare-runs asks how two saved runs differ
+- task validation asks whether the current saved model is strong enough to support representative agent-facing tasks
+
 ## Output layout
 
 Example output:
