@@ -431,6 +431,95 @@ Each task result includes lightweight path-support hints such as:
 - `first_hop_quality`
 - `key_affordance_relevance`
 
+### Runtime-facing contract
+
+For orchestration/runtime use, `agentic_sitemap` now exposes a small stable JSON contract aligned with the shared outer-envelope style used by `agentic_devdocs`.
+
+Supported commands:
+
+- `runtime-query --json-contract`
+  - `page` lookup by page URL, route, or page id against a saved run
+  - `page_type` lookup against a saved run
+  - `path` lookup between pages in a saved run
+- `validate-tasks --json-contract`
+  - returns task-validation results in the same outer contract envelope
+
+The contract is intentionally narrow. It wraps existing saved sitemap/task-validation artifacts; it does not change crawling behavior or the human-oriented artifact formats.
+
+Shared outer envelope:
+
+```json
+{
+  "tool": "agentic_sitemap",
+  "version": "v1",
+  "query": "...",
+  "normalized_query": "...",
+  "intent": {
+    "query_intent": "...",
+    "lookup_mode": "...",
+    "role_profile": "...",
+    "filters": []
+  },
+  "results": []
+}
+```
+
+Contract rules:
+
+- `tool`, `version`, `query`, `normalized_query`, `intent`, and `results` are always present.
+- `results` is always a list, even when empty.
+- every result always includes `id`, `type`, `rank`, `confidence`, `source`, `content`, and `diagnostics`
+- `source.heading_path` is always a list
+- nullable provenance fields such as `source.url`, `source.canonical_url`, `source.path`, `source.document_title`, and `source.section_title` remain present as `null` when absent
+- result ids are deterministic hashes derived from stable page/task/path identifiers rather than random values
+
+Provenance semantics:
+
+- `source.name`: stable source label, currently `moodle_site`
+- `source.type`: currently `site_crawl`
+- `source.url`: original page URL when available
+- `source.canonical_url`: normalized canonical page URL when available
+- `source.path`: route path or path-with-query used for traceability
+- `source.document_title`: page title when available
+- `source.section_title`: currently `null` for sitemap results
+- `source.heading_path`: currently `[]` for sitemap results
+
+Confidence semantics are intentionally coarse:
+
+- `high`: exact or strongest runtime match
+- `medium`: useful but broader or less direct match
+- `low`: weak fallback or contextual result
+
+Page/context example:
+
+```bash
+moodle-sitemap runtime-query \
+  --run ./discovery-runs/2026-04-09T025735Z \
+  --lookup-mode page \
+  --query https://webserver/user/preferences.php \
+  --json-contract
+```
+
+Workflow/path example:
+
+```bash
+moodle-sitemap runtime-query \
+  --run ./discovery-runs/2026-04-09T025735Z \
+  --lookup-mode path \
+  --from-page dashboard \
+  --to-page user_preferences \
+  --json-contract
+```
+
+Task-validation example:
+
+```bash
+moodle-sitemap validate-tasks \
+  --run ./discovery-runs/2026-04-09T025735Z \
+  --tasks ./task-validation/tasks.json \
+  --json-contract
+```
+
 ## Architecture and maintenance notes
 
 For a maintainer-oriented walkthrough of module boundaries, artifact lifecycle, invariants, extension rules, and testing strategy, see:

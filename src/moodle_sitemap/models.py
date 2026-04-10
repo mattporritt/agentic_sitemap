@@ -559,3 +559,57 @@ class TaskValidationSummary(StrictModel):
     partial_count: int = 0
     fail_count: int = 0
     results: list[TaskValidationTaskResult] = Field(default_factory=list)
+
+
+class RuntimeContractVersion(StrEnum):
+    V1 = "v1"
+
+
+class RuntimeLookupMode(StrEnum):
+    PAGE = "page"
+    PAGE_TYPE = "page_type"
+    PATH = "path"
+    TASK_VALIDATION = "task_validation"
+
+
+class RuntimeConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class RuntimeContractIntent(StrictModel):
+    query_intent: str
+    lookup_mode: str | None = None
+    role_profile: str | None = None
+    filters: list[str] = Field(default_factory=list)
+
+
+class RuntimeContractSource(StrictModel):
+    name: str
+    type: str
+    url: str | None = None
+    canonical_url: str | None = None
+    path: str | None = None
+    document_title: str | None = None
+    section_title: str | None = None
+    heading_path: list[str] = Field(default_factory=list)
+
+
+class RuntimeContractResult(StrictModel):
+    id: str
+    type: str
+    rank: int
+    confidence: RuntimeConfidence
+    source: RuntimeContractSource
+    content: dict[str, object] = Field(default_factory=dict)
+    diagnostics: dict[str, object] = Field(default_factory=dict)
+
+
+class RuntimeContractEnvelope(StrictModel):
+    tool: str = "agentic_sitemap"
+    version: RuntimeContractVersion = RuntimeContractVersion.V1
+    query: str
+    normalized_query: str
+    intent: RuntimeContractIntent
+    results: list[RuntimeContractResult] = Field(default_factory=list)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -7,6 +8,12 @@ import typer
 from moodle_sitemap.compare_runs import compare_runs
 from moodle_sitemap.crawl import CrawlConfig, crawl_site, format_progress_line
 from moodle_sitemap.discovery import run_discovery
+from moodle_sitemap.models import RuntimeLookupMode
+from moodle_sitemap.runtime_contract import (
+    build_page_lookup_contract,
+    build_path_lookup_contract,
+    build_task_validation_contract,
+)
 from moodle_sitemap.smoke import run_smoke_test
 from moodle_sitemap.task_validation import validate_tasks_for_run
 from moodle_sitemap.verify import run_verification
@@ -164,6 +171,11 @@ def validate_tasks_command(
         Path("task-validation-runs"),
         help="Root directory for timestamped task-validation results.",
     ),
+    json_contract: bool = typer.Option(
+        False,
+        "--json-contract",
+        help="Emit the stable runtime-facing JSON contract envelope.",
+    ),
 ) -> None:
     try:
         result = validate_tasks_for_run(run_dir=run, tasks_path=tasks, base_dir=output_root)
@@ -172,9 +184,59 @@ def validate_tasks_command(
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    if json_contract:
+        typer.echo(json.dumps(build_task_validation_contract(result.summary).model_dump(), indent=2, sort_keys=True))
+        return
+
     typer.echo(
         f"Task validation wrote {result.json_path} and {result.markdown_path} into {result.output_dir}"
     )
+
+
+@app.command("runtime-query")
+def runtime_query_command(
+    run: Path = typer.Option(..., help="Path to the saved discovery or crawl run directory."),
+    lookup_mode: RuntimeLookupMode = typer.Option(..., help="Lookup mode: page, page_type, or path."),
+    query: str | None = typer.Option(None, help="Lookup query for page or page_type mode."),
+    from_page: str | None = typer.Option(None, help="Source page selector for path mode."),
+    to_page: str | None = typer.Option(None, help="Target page selector for path mode."),
+    top_k: int = typer.Option(5, min=1, help="Maximum runtime results to return."),
+    json_contract: bool = typer.Option(
+        False,
+        "--json-contract",
+        help="Emit the stable runtime-facing JSON contract envelope.",
+    ),
+) -> None:
+    """Query saved sitemap artifacts using the runtime-facing contract surface."""
+
+    if lookup_mode in {RuntimeLookupMode.PAGE, RuntimeLookupMode.PAGE_TYPE}:
+        if not query:
+            raise typer.BadParameter("--query is required for page and page_type lookups.")
+        envelope = build_page_lookup_contract(
+            run_dir=run,
+            query=query,
+            lookup_mode=lookup_mode,
+            top_k=top_k,
+        )
+    elif lookup_mode == RuntimeLookupMode.PATH:
+        if not from_page or not to_page:
+            raise typer.BadParameter("--from-page and --to-page are required for path lookups.")
+        envelope = build_path_lookup_contract(
+            run_dir=run,
+            from_selector=from_page,
+            to_selector=to_page,
+            top_k=top_k,
+        )
+    else:
+        raise typer.BadParameter(f"Unsupported runtime lookup mode: {lookup_mode.value}")
+
+    if json_contract:
+        typer.echo(json.dumps(envelope.model_dump(), indent=2, sort_keys=True))
+        return
+
+    typer.echo(f"Runtime query returned {len(envelope.results)} result(s) for {lookup_mode.value}")
+    for result in envelope.results:
+        typer.echo(f"[{result.rank}] {result.type} {result.source.canonical_url or result.source.path or '-'}")
 
 
 if __name__ == "__main__":
