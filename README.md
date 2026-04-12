@@ -433,7 +433,7 @@ Each task result includes lightweight path-support hints such as:
 
 ### Runtime-facing contract
 
-For orchestration/runtime use, `agentic_sitemap` now exposes a small stable JSON contract aligned with the shared outer-envelope style used by `agentic_devdocs`.
+For orchestration/runtime use, `agentic_sitemap` now adopts the canonical shared outer runtime schema owned by `agentic_devdocs`.
 
 Supported commands:
 
@@ -444,7 +444,7 @@ Supported commands:
 - `validate-tasks --json-contract`
   - returns task-validation results in the same outer contract envelope
 
-The contract is intentionally narrow. It wraps existing saved sitemap/task-validation artifacts; it does not change crawling behavior or the human-oriented artifact formats.
+The contract is intentionally narrow. It wraps existing saved sitemap/task-validation artifacts; it does not change crawling behavior or the human-oriented artifact formats. The shared outer envelope, shared provenance block, and shared diagnostics block follow the vendored canonical schema in [`schemas/shared_runtime_contract_v1.json`](/Users/mattp/projects/agentic_sitemap/schemas/shared_runtime_contract_v1.json). Sitemap keeps its own tool-specific payload inside `results[].content`.
 
 Shared outer envelope:
 
@@ -456,9 +456,8 @@ Shared outer envelope:
   "normalized_query": "...",
   "intent": {
     "query_intent": "...",
-    "lookup_mode": "...",
-    "role_profile": "...",
-    "filters": []
+    "task_intent": "...",
+    "concept_families": []
   },
   "results": []
 }
@@ -471,7 +470,7 @@ Contract rules:
 - every result always includes `id`, `type`, `rank`, `confidence`, `source`, `content`, and `diagnostics`
 - the supported live contract modes are `runtime-query` with `page`, `page_type`, and `path`, plus `validate-tasks`; all are expected to emit the full outer envelope and full result object shape
 - `source.heading_path` is always a list
-- nullable provenance fields such as `source.url`, `source.canonical_url`, `source.path`, `source.document_title`, and `source.section_title` remain present as `null` when absent
+- nullable provenance fields such as `source.url`, `source.canonical_url`, and `source.section_title` remain present as `null` when absent
 - result ids are deterministic hashes derived from stable page/task/path identifiers rather than random values
 
 Provenance semantics:
@@ -484,6 +483,12 @@ Provenance semantics:
 - `source.document_title`: page title when available
 - `source.section_title`: currently `null` for sitemap results
 - `source.heading_path`: currently `[]` for sitemap results
+
+Conformance validation:
+
+- the vendored canonical schema artifact is checked in at [`schemas/shared_runtime_contract_v1.json`](/Users/mattp/projects/agentic_sitemap/schemas/shared_runtime_contract_v1.json)
+- runtime contract tests validate the supported live `--json-contract` commands against the aligned shared model
+- sitemap-specific `results[].content` remains tool-specific; only the shared outer envelope and shared result/source/diagnostics structure are standardized
 
 Confidence semantics are intentionally coarse:
 

@@ -9,6 +9,7 @@ internally consistent.
 
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -561,10 +562,6 @@ class TaskValidationSummary(StrictModel):
     results: list[TaskValidationTaskResult] = Field(default_factory=list)
 
 
-class RuntimeContractVersion(StrEnum):
-    V1 = "v1"
-
-
 class RuntimeLookupMode(StrEnum):
     PAGE = "page"
     PAGE_TYPE = "page_type"
@@ -579,37 +576,72 @@ class RuntimeConfidence(StrEnum):
 
 
 class RuntimeContractIntent(StrictModel):
+    """Stable runtime-facing query intent summary."""
+
     query_intent: str
-    lookup_mode: str | None = None
-    role_profile: str | None = None
-    filters: list[str] = Field(default_factory=list)
+    task_intent: str
+    concept_families: list[str]
 
 
 class RuntimeContractSource(StrictModel):
-    name: str
-    type: str
-    url: str | None = None
-    canonical_url: str | None = None
-    path: str | None = None
-    document_title: str | None = None
-    section_title: str | None = None
-    heading_path: list[str] = Field(default_factory=list)
+    """Runtime-facing provenance for a returned knowledge bundle."""
+
+    name: str | None
+    type: str | None
+    url: str | None
+    canonical_url: str | None
+    path: str
+    document_title: str
+    section_title: str | None
+    heading_path: list[str]
 
 
-class RuntimeContractResult(StrictModel):
+class RuntimeContractDiagnostics(StrictModel):
+    """Minimal runtime diagnostics for debugging orchestration issues."""
+
+    ranking_explanation: str | None
+    support_reason: str | None
+    token_count: int
+    selection_strategy: str
+
+
+class SharedRuntimeContractContent(BaseModel):
+    """Tool-specific runtime payload carried inside the shared outer envelope.
+
+    The shared cross-tool contract intentionally does not constrain the inner
+    shape beyond "must be an object". `agentic_docs` layers its richer content
+    model on top of this shared shell.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
+class SharedRuntimeContractResult(StrictModel):
+    """Shared cross-tool runtime result wrapper.
+
+    This preserves the common provenance and diagnostics shape while allowing
+    each tool to define its own `content` payload.
+    """
+
     id: str
     type: str
     rank: int
-    confidence: RuntimeConfidence
+    confidence: Literal["high", "medium", "low"]
     source: RuntimeContractSource
-    content: dict[str, object] = Field(default_factory=dict)
-    diagnostics: dict[str, object] = Field(default_factory=dict)
+    content: SharedRuntimeContractContent
+    diagnostics: RuntimeContractDiagnostics
 
 
-class RuntimeContractEnvelope(StrictModel):
-    tool: str = "agentic_sitemap"
-    version: RuntimeContractVersion = RuntimeContractVersion.V1
+class SharedRuntimeContractEnvelope(StrictModel):
+    """Canonical shared outer envelope for the Moodle agentic tool family."""
+
+    tool: str
+    version: str
     query: str
     normalized_query: str
     intent: RuntimeContractIntent
-    results: list[RuntimeContractResult] = Field(default_factory=list)
+    results: list[SharedRuntimeContractResult]
+
+
+RuntimeContractResult = SharedRuntimeContractResult
+RuntimeContractEnvelope = SharedRuntimeContractEnvelope

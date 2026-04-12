@@ -17,6 +17,7 @@ from moodle_sitemap.models import (
     PageRecord,
     PageType,
     RuntimeConfidence,
+    RuntimeContractDiagnostics,
     RuntimeContractEnvelope,
     RuntimeContractIntent,
     RuntimeContractResult,
@@ -69,21 +70,27 @@ def build_page_lookup_contract(
                 confidence=match["confidence"],
                 source=build_page_source(page),
                 content=build_page_content(page),
-                diagnostics={
-                    "lookup_mode": lookup_mode.value,
-                    "matched_on": match["matched_on"],
-                    "artifact_run": str(run_dir),
-                },
+                diagnostics=RuntimeContractDiagnostics(
+                    ranking_explanation=(
+                        f"Matched {match['matched_on']} for {page.page_type.value} at rank {rank}."
+                    ),
+                    support_reason=f"artifact_run={run_dir}",
+                    token_count=0,
+                    selection_strategy=(
+                        "page_lookup_exact" if lookup_mode == RuntimeLookupMode.PAGE else "page_type_lookup"
+                    ),
+                ),
             )
         )
     return RuntimeContractEnvelope(
+        tool="agentic_sitemap",
+        version="v1",
         query=query,
         normalized_query=normalize_runtime_query(query),
         intent=RuntimeContractIntent(
             query_intent="page_lookup" if lookup_mode == RuntimeLookupMode.PAGE else "page_type_lookup",
-            lookup_mode=lookup_mode.value,
-            role_profile=manifest.role_profile,
-            filters=[],
+            task_intent="page_context_lookup",
+            concept_families=[query.strip().lower()] if lookup_mode == RuntimeLookupMode.PAGE_TYPE else [],
         ),
         results=results,
     )
@@ -134,12 +141,6 @@ def build_path_lookup_contract(
     results: list[RuntimeContractResult] = []
     for rank, (_, _, _, source_page, target_page, path_edges) in enumerate(path_results[:top_k], start=1):
         result_type = "site_path"
-        diagnostics = {
-            "lookup_mode": RuntimeLookupMode.PATH.value,
-            "artifact_run": str(run_dir),
-            "path_strategy": "workflow_graph_bfs",
-            "edge_count": len(path_edges),
-        }
         results.append(
             RuntimeContractResult(
                 id=stable_runtime_id("path", source_page.normalized_url, target_page.normalized_url),
@@ -169,19 +170,28 @@ def build_path_lookup_contract(
                         for index, edge in enumerate(path_edges)
                     ],
                 },
-                diagnostics=diagnostics,
+                diagnostics=RuntimeContractDiagnostics(
+                    ranking_explanation=(
+                        f"Selected shortest workflow path with {len(path_edges)} edge(s) "
+                        f"from {source_page.page_type.value} to {target_page.page_type.value}."
+                    ),
+                    support_reason=f"artifact_run={run_dir}; edge_count={len(path_edges)}",
+                    token_count=0,
+                    selection_strategy="workflow_graph_bfs",
+                ),
             )
         )
 
     query = f"{from_selector} -> {to_selector}"
     return RuntimeContractEnvelope(
+        tool="agentic_sitemap",
+        version="v1",
         query=query,
         normalized_query=normalize_runtime_query(query),
         intent=RuntimeContractIntent(
             query_intent="path_lookup",
-            lookup_mode=RuntimeLookupMode.PATH.value,
-            role_profile=manifest.role_profile,
-            filters=[from_selector, to_selector],
+            task_intent="navigate",
+            concept_families=[from_selector, to_selector],
         ),
         results=results,
     )
@@ -219,24 +229,27 @@ def build_task_validation_contract(summary: TaskValidationSummary) -> RuntimeCon
                     "key_affordances": list(task.key_affordances),
                     "safety_notes": list(task.safety_notes),
                 },
-                diagnostics={
-                    "lookup_mode": RuntimeLookupMode.TASK_VALIDATION.value,
-                    "artifact_run": summary.run_dir,
-                    "tasks_file": summary.tasks_file,
-                    "status": task.status.value,
-                    "path_quality_score": task.path_quality_score,
-                },
+                diagnostics=RuntimeContractDiagnostics(
+                    ranking_explanation=(
+                        f"Task {task.task_id} evaluated as {task.status.value} "
+                        f"with path_quality_score={task.path_quality_score}."
+                    ),
+                    support_reason=f"artifact_run={summary.run_dir}; tasks_file={summary.tasks_file}",
+                    token_count=0,
+                    selection_strategy="task_validation_summary",
+                ),
             )
         )
     query = f"task validation for {summary.role_profile}"
     return RuntimeContractEnvelope(
+        tool="agentic_sitemap",
+        version="v1",
         query=query,
         normalized_query=normalize_runtime_query(query),
         intent=RuntimeContractIntent(
             query_intent="task_validation",
-            lookup_mode=RuntimeLookupMode.TASK_VALIDATION.value,
-            role_profile=summary.role_profile,
-            filters=[],
+            task_intent="task_assessment",
+            concept_families=sorted(set(task_type for task in summary.results for task_type in task.target_page_types)),
         ),
         results=results,
     )
@@ -303,13 +316,13 @@ def build_page_source(page: PageRecord | None) -> RuntimeContractSource:
             type="site_crawl",
             url=None,
             canonical_url=None,
-            path=None,
-            document_title=None,
+            path="",
+            document_title="",
             section_title=None,
             heading_path=[],
         )
     parsed = urlparse(page.normalized_url)
-    path = parsed.path or None
+    path = parsed.path or ""
     if parsed.query:
         path = f"{parsed.path}?{parsed.query}"
     return RuntimeContractSource(

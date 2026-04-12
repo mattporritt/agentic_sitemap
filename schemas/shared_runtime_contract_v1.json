@@ -1,0 +1,258 @@
+{
+  "$defs": {
+    "RuntimeContractDiagnostics": {
+      "additionalProperties": false,
+      "description": "Minimal runtime diagnostics for debugging orchestration issues.",
+      "properties": {
+        "ranking_explanation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ranking Explanation"
+        },
+        "selection_strategy": {
+          "title": "Selection Strategy",
+          "type": "string"
+        },
+        "support_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Reason"
+        },
+        "token_count": {
+          "title": "Token Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ranking_explanation",
+        "support_reason",
+        "token_count",
+        "selection_strategy"
+      ],
+      "title": "RuntimeContractDiagnostics",
+      "type": "object"
+    },
+    "RuntimeContractIntent": {
+      "additionalProperties": false,
+      "description": "Stable runtime-facing query intent summary.",
+      "properties": {
+        "concept_families": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Concept Families",
+          "type": "array"
+        },
+        "query_intent": {
+          "title": "Query Intent",
+          "type": "string"
+        },
+        "task_intent": {
+          "title": "Task Intent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query_intent",
+        "task_intent",
+        "concept_families"
+      ],
+      "title": "RuntimeContractIntent",
+      "type": "object"
+    },
+    "RuntimeContractSource": {
+      "additionalProperties": false,
+      "description": "Runtime-facing provenance for a returned knowledge bundle.",
+      "properties": {
+        "canonical_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Canonical Url"
+        },
+        "document_title": {
+          "title": "Document Title",
+          "type": "string"
+        },
+        "heading_path": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heading Path",
+          "type": "array"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "section_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Section Title"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Type"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Url"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "url",
+        "canonical_url",
+        "path",
+        "document_title",
+        "section_title",
+        "heading_path"
+      ],
+      "title": "RuntimeContractSource",
+      "type": "object"
+    },
+    "SharedRuntimeContractContent": {
+      "additionalProperties": true,
+      "description": "Tool-specific runtime payload carried inside the shared outer envelope.\n\nThe shared cross-tool contract intentionally does not constrain the inner\nshape beyond \"must be an object\". `agentic_docs` layers its richer content\nmodel on top of this shared shell.",
+      "properties": {},
+      "title": "SharedRuntimeContractContent",
+      "type": "object"
+    },
+    "SharedRuntimeContractResult": {
+      "additionalProperties": false,
+      "description": "Shared cross-tool runtime result wrapper.\n\nThis preserves the common provenance and diagnostics shape while allowing\neach tool to define its own `content` payload.",
+      "properties": {
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/SharedRuntimeContractContent"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/RuntimeContractDiagnostics"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/RuntimeContractSource"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "rank",
+        "confidence",
+        "source",
+        "content",
+        "diagnostics"
+      ],
+      "title": "SharedRuntimeContractResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Canonical shared outer envelope for the Moodle agentic tool family.",
+  "properties": {
+    "intent": {
+      "$ref": "#/$defs/RuntimeContractIntent"
+    },
+    "normalized_query": {
+      "title": "Normalized Query",
+      "type": "string"
+    },
+    "query": {
+      "title": "Query",
+      "type": "string"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/SharedRuntimeContractResult"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "tool": {
+      "title": "Tool",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool",
+    "version",
+    "query",
+    "normalized_query",
+    "intent",
+    "results"
+  ],
+  "title": "SharedRuntimeContractEnvelope",
+  "type": "object"
+}

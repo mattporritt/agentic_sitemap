@@ -17,6 +17,7 @@ from moodle_sitemap.models import (
     PageAffordances,
     PageRecord,
     PageType,
+    RuntimeContractEnvelope,
     SiteManifest,
     TaskSpecList,
     WorkflowEdge,
@@ -25,6 +26,7 @@ from moodle_sitemap.models import (
 )
 
 runner = CliRunner()
+VENDORED_SCHEMA_PATH = Path("schemas/shared_runtime_contract_v1.json")
 
 
 def make_page(
@@ -95,11 +97,10 @@ def assert_contract_envelope_shape(payload: dict[str, object]) -> None:
     assert isinstance(payload["results"], list)
     assert set(payload["intent"].keys()) == {
         "query_intent",
-        "lookup_mode",
-        "role_profile",
-        "filters",
+        "task_intent",
+        "concept_families",
     }
-    assert isinstance(payload["intent"]["filters"], list)
+    assert isinstance(payload["intent"]["concept_families"], list)
 
 
 def assert_contract_result_shape(item: dict[str, object]) -> None:
@@ -187,9 +188,8 @@ def test_runtime_query_page_json_contract_has_required_fields(tmp_path: Path) ->
     assert payload["normalized_query"] == "https://example.com/user/preferences.php"
     assert payload["intent"] == {
         "query_intent": "page_lookup",
-        "lookup_mode": "page",
-        "role_profile": "student",
-        "filters": [],
+        "task_intent": "page_context_lookup",
+        "concept_families": [],
     }
     assert isinstance(payload["results"], list)
     item = payload["results"][0]
@@ -208,7 +208,9 @@ def test_runtime_query_page_json_contract_has_required_fields(tmp_path: Path) ->
         "heading_path": [],
     }
     assert item["content"]["next_steps"] == []
-    assert item["diagnostics"]["lookup_mode"] == "page"
+    assert item["diagnostics"]["selection_strategy"] == "page_lookup_exact"
+    assert item["diagnostics"]["token_count"] == 0
+    assert "Matched page_url" in item["diagnostics"]["ranking_explanation"]
 
 
 def test_runtime_query_path_json_contract_is_deterministic(tmp_path: Path) -> None:
@@ -255,7 +257,12 @@ def test_runtime_query_path_json_contract_is_deterministic(tmp_path: Path) -> No
     assert first["results"][0]["type"] == "site_path"
     assert first["results"][0]["content"]["page_types"] == ["dashboard", "user_preferences"]
     assert first["results"][0]["content"]["hops"][0]["target_page_type"] == "user_preferences"
-    assert first["results"][0]["diagnostics"]["path_strategy"] == "workflow_graph_bfs"
+    assert first["results"][0]["diagnostics"]["selection_strategy"] == "workflow_graph_bfs"
+    assert first["intent"] == {
+        "query_intent": "path_lookup",
+        "task_intent": "navigate",
+        "concept_families": ["dashboard", "user_preferences"],
+    }
 
 
 def test_validate_tasks_json_contract_has_stable_result_shape(tmp_path: Path) -> None:
@@ -346,11 +353,13 @@ def test_validate_tasks_json_contract_has_stable_result_shape(tmp_path: Path) ->
     assert_contract_result_shape(payload["results"][0])
     assert payload["tool"] == "agentic_sitemap"
     assert payload["intent"]["query_intent"] == "task_validation"
+    assert payload["intent"]["task_intent"] == "task_assessment"
     assert payload["results"][0]["type"] == "task_validation"
     assert payload["results"][0]["source"]["heading_path"] == []
     assert payload["results"][0]["source"]["section_title"] is None
     assert payload["results"][0]["content"]["target_page_ids"] == ["0002-msgprefs"]
     assert payload["results"][0]["content"]["key_affordances"] == ["Notification preferences"]
+    assert payload["results"][0]["diagnostics"]["selection_strategy"] == "task_validation_summary"
 
 
 def test_runtime_query_page_type_json_contract_has_full_result_shape(tmp_path: Path) -> None:
@@ -384,11 +393,13 @@ def test_runtime_query_page_type_json_contract_has_full_result_shape(tmp_path: P
     payload = json.loads(result.stdout)
     assert_contract_envelope_shape(payload)
     assert payload["intent"]["query_intent"] == "page_type_lookup"
+    assert payload["intent"]["task_intent"] == "page_context_lookup"
+    assert payload["intent"]["concept_families"] == ["user_preferences"]
     item = payload["results"][0]
     assert_contract_result_shape(item)
     assert item["type"] == "page_context"
     assert item["content"]["page_type"] == "user_preferences"
-    assert item["diagnostics"]["matched_on"] == "page_type"
+    assert item["diagnostics"]["selection_strategy"] == "page_type_lookup"
 
 
 def test_runtime_query_empty_result_contract_keeps_required_lists(tmp_path: Path) -> None:
@@ -418,4 +429,70 @@ def test_runtime_query_empty_result_contract_keeps_required_lists(tmp_path: Path
     payload = json.loads(result.stdout)
     assert_contract_envelope_shape(payload)
     assert payload["results"] == []
-    assert payload["intent"]["filters"] == []
+    assert payload["intent"]["concept_families"] == []
+
+
+def test_vendored_shared_schema_exists_and_matches_runtime_model() -> None:
+    assert VENDORED_SCHEMA_PATH.exists()
+    vendored_schema = json.loads(VENDORED_SCHEMA_PATH.read_text(encoding="utf-8"))
+    assert vendored_schema == RuntimeContractEnvelope.model_json_schema()
+    assert vendored_schema["required"] == [
+        "tool",
+        "version",
+        "query",
+        "normalized_query",
+        "intent",
+        "results",
+    ]
+    assert vendored_schema["$defs"]["SharedRuntimeContractResult"]["required"] == [
+        "id",
+        "type",
+        "rank",
+        "confidence",
+        "source",
+        "content",
+        "diagnostics",
+    ]
+    assert vendored_schema["$defs"]["RuntimeContractSource"]["required"] == [
+        "name",
+        "type",
+        "url",
+        "canonical_url",
+        "path",
+        "document_title",
+        "section_title",
+        "heading_path",
+    ]
+
+
+def test_runtime_contract_output_validates_against_shared_model(tmp_path: Path) -> None:
+    prefs = make_page(
+        "0002-prefs",
+        "https://example.com/user/preferences.php",
+        page_type=PageType.USER_PREFERENCES,
+    )
+    run_dir = tmp_path / "run"
+    write_saved_run(
+        run_dir,
+        make_manifest("student", [prefs], workflow_edge_count=0),
+        WorkflowGraph(role_profile="student", total_edges=0, edges=[]),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "runtime-query",
+            "--run",
+            str(run_dir),
+            "--lookup-mode",
+            "page_type",
+            "--query",
+            "user_preferences",
+            "--json-contract",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = RuntimeContractEnvelope.model_validate_json(result.stdout)
+    assert payload.tool == "agentic_sitemap"
+    assert payload.intent.task_intent == "page_context_lookup"
