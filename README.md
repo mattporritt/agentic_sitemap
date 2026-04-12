@@ -469,6 +469,7 @@ Contract rules:
 - `tool`, `version`, `query`, `normalized_query`, `intent`, and `results` are always present.
 - `results` is always a list, even when empty.
 - every result always includes `id`, `type`, `rank`, `confidence`, `source`, `content`, and `diagnostics`
+- the supported live contract modes are `runtime-query` with `page`, `page_type`, and `path`, plus `validate-tasks`; all are expected to emit the full outer envelope and full result object shape
 - `source.heading_path` is always a list
 - nullable provenance fields such as `source.url`, `source.canonical_url`, `source.path`, `source.document_title`, and `source.section_title` remain present as `null` when absent
 - result ids are deterministic hashes derived from stable page/task/path identifiers rather than random values

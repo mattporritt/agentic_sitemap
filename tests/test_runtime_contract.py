@@ -83,6 +83,50 @@ def write_saved_run(run_dir: Path, manifest: SiteManifest, graph: WorkflowGraph)
     (run_dir / "workflow-edges.json").write_text(graph.model_dump_json(indent=2), encoding="utf-8")
 
 
+def assert_contract_envelope_shape(payload: dict[str, object]) -> None:
+    assert set(payload.keys()) == {
+        "tool",
+        "version",
+        "query",
+        "normalized_query",
+        "intent",
+        "results",
+    }
+    assert isinstance(payload["results"], list)
+    assert set(payload["intent"].keys()) == {
+        "query_intent",
+        "lookup_mode",
+        "role_profile",
+        "filters",
+    }
+    assert isinstance(payload["intent"]["filters"], list)
+
+
+def assert_contract_result_shape(item: dict[str, object]) -> None:
+    assert set(item.keys()) == {
+        "id",
+        "type",
+        "rank",
+        "confidence",
+        "source",
+        "content",
+        "diagnostics",
+    }
+    assert isinstance(item["content"], dict)
+    assert isinstance(item["diagnostics"], dict)
+    assert set(item["source"].keys()) == {
+        "name",
+        "type",
+        "url",
+        "canonical_url",
+        "path",
+        "document_title",
+        "section_title",
+        "heading_path",
+    }
+    assert isinstance(item["source"]["heading_path"], list)
+
+
 def test_runtime_query_page_json_contract_has_required_fields(tmp_path: Path) -> None:
     dashboard = make_page(
         "0001-my",
@@ -136,6 +180,7 @@ def test_runtime_query_page_json_contract_has_required_fields(tmp_path: Path) ->
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
+    assert_contract_envelope_shape(payload)
     assert payload["tool"] == "agentic_sitemap"
     assert payload["version"] == "v1"
     assert payload["query"] == "https://example.com/user/preferences.php"
@@ -148,6 +193,7 @@ def test_runtime_query_page_json_contract_has_required_fields(tmp_path: Path) ->
     }
     assert isinstance(payload["results"], list)
     item = payload["results"][0]
+    assert_contract_result_shape(item)
     assert item["type"] == "page_context"
     assert item["rank"] == 1
     assert item["confidence"] == "high"
@@ -203,6 +249,8 @@ def test_runtime_query_path_json_contract_is_deterministic(tmp_path: Path) -> No
     first = json.loads(runner.invoke(app, args).stdout)
     second = json.loads(runner.invoke(app, args).stdout)
 
+    assert_contract_envelope_shape(first)
+    assert_contract_result_shape(first["results"][0])
     assert first["results"][0]["id"] == second["results"][0]["id"]
     assert first["results"][0]["type"] == "site_path"
     assert first["results"][0]["content"]["page_types"] == ["dashboard", "user_preferences"]
@@ -294,6 +342,8 @@ def test_validate_tasks_json_contract_has_stable_result_shape(tmp_path: Path) ->
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
+    assert_contract_envelope_shape(payload)
+    assert_contract_result_shape(payload["results"][0])
     assert payload["tool"] == "agentic_sitemap"
     assert payload["intent"]["query_intent"] == "task_validation"
     assert payload["results"][0]["type"] == "task_validation"
@@ -301,3 +351,71 @@ def test_validate_tasks_json_contract_has_stable_result_shape(tmp_path: Path) ->
     assert payload["results"][0]["source"]["section_title"] is None
     assert payload["results"][0]["content"]["target_page_ids"] == ["0002-msgprefs"]
     assert payload["results"][0]["content"]["key_affordances"] == ["Notification preferences"]
+
+
+def test_runtime_query_page_type_json_contract_has_full_result_shape(tmp_path: Path) -> None:
+    prefs = make_page(
+        "0002-prefs",
+        "https://example.com/user/preferences.php",
+        page_type=PageType.USER_PREFERENCES,
+    )
+    run_dir = tmp_path / "run"
+    write_saved_run(
+        run_dir,
+        make_manifest("student", [prefs], workflow_edge_count=0),
+        WorkflowGraph(role_profile="student", total_edges=0, edges=[]),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "runtime-query",
+            "--run",
+            str(run_dir),
+            "--lookup-mode",
+            "page_type",
+            "--query",
+            "user_preferences",
+            "--json-contract",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert_contract_envelope_shape(payload)
+    assert payload["intent"]["query_intent"] == "page_type_lookup"
+    item = payload["results"][0]
+    assert_contract_result_shape(item)
+    assert item["type"] == "page_context"
+    assert item["content"]["page_type"] == "user_preferences"
+    assert item["diagnostics"]["matched_on"] == "page_type"
+
+
+def test_runtime_query_empty_result_contract_keeps_required_lists(tmp_path: Path) -> None:
+    dashboard = make_page("0001-my", "https://example.com/my", page_type=PageType.DASHBOARD)
+    run_dir = tmp_path / "run"
+    write_saved_run(
+        run_dir,
+        make_manifest("student", [dashboard], workflow_edge_count=0),
+        WorkflowGraph(role_profile="student", total_edges=0, edges=[]),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "runtime-query",
+            "--run",
+            str(run_dir),
+            "--lookup-mode",
+            "page",
+            "--query",
+            "https://example.com/missing",
+            "--json-contract",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert_contract_envelope_shape(payload)
+    assert payload["results"] == []
+    assert payload["intent"]["filters"] == []
