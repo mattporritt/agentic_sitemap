@@ -1,3 +1,7 @@
+# Copyright (c) Moodle Pty Ltd. All rights reserved.
+# Licensed under the Moodle Community License v1.3.
+# See LICENSE.md in the repository root for full terms.
+# Commercial use requires a separate written agreement with Moodle.
 from moodle_sitemap.crawl import CrawlVisitIndex, format_progress_line
 from moodle_sitemap.models import PageRecord, PageType
 
