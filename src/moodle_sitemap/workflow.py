@@ -12,6 +12,7 @@ top-level graph-building flow readable for maintainers and future agents.
 
 from moodle_sitemap.models import EdgeRelevance, EdgeWeight, PageRecord, WorkflowEdgeType, WorkflowGraph
 from moodle_sitemap.workflow_support import (
+    annotate_workflow_families,
     assign_next_steps,
     attach_background_clusters,
     augment_next_steps_with_background_clusters,
@@ -44,6 +45,7 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
     attach_background_clusters(pages, background_clusters)
     changed_pages = assign_next_steps(pages, edges, before_next_steps=before_next_steps)
     augment_next_steps_with_background_clusters(pages)
+    workflow_families = annotate_workflow_families(pages)
 
     edge_type_counts = {edge_type.value: 0 for edge_type in WorkflowEdgeType}
     edge_weight_counts = {edge_weight.value: 0 for edge_weight in EdgeWeight}
@@ -73,6 +75,7 @@ def derive_workflow_graph(pages: list[PageRecord], *, role_profile: str = "unlab
         pre_dedup_edge_weight_counts=pre_dedup_edge_weight_counts,
         pre_dedup_edge_relevance_counts=pre_dedup_edge_relevance_counts,
         next_step_changed_pages=changed_pages,
+        workflow_families=workflow_families,
         background_clusters=background_clusters,
         edges=sorted(edges, key=lambda item: (item.from_page_id, item.target_url, item.edge_type.value)),
     )

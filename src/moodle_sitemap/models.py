@@ -288,6 +288,23 @@ class PageTaskSummary(StrictModel):
     task_relevance_score: int = 0
 
 
+class WorkflowFamilyDescendantSummary(StrictModel):
+    route_family: str
+    descendant_kind: str | None = None
+    count: int = 0
+    representative_urls: list[str] = Field(default_factory=list)
+    discovered_only: bool = True
+
+
+class WorkflowFamilySummary(StrictModel):
+    family_key: str
+    family_label: str
+    member_page_ids: list[str] = Field(default_factory=list)
+    member_page_urls: list[str] = Field(default_factory=list)
+    family_roles: list[str] = Field(default_factory=list)
+    descendants: list[WorkflowFamilyDescendantSummary] = Field(default_factory=list)
+
+
 class WorkflowEdge(StrictModel):
     from_page_id: str
     to_page_id: str | None = None
@@ -342,6 +359,7 @@ class WorkflowGraph(StrictModel):
     pre_dedup_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
     pre_dedup_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
     next_step_changed_pages: list[dict[str, object]] = Field(default_factory=list)
+    workflow_families: list[WorkflowFamilySummary] = Field(default_factory=list)
     background_clusters: list[BackgroundNavigationCluster] = Field(default_factory=list)
     edges: list[WorkflowEdge] = Field(default_factory=list)
 
@@ -396,6 +414,12 @@ class PageRecord(StrictModel):
     primary_page_intent: LikelyIntent = LikelyIntent.UNKNOWN
     primary_actions: list[str] = Field(default_factory=list)
     task_relevance_score: int = 0
+    workflow_family: str | None = None
+    family_label: str | None = None
+    family_role: str | None = None
+    family_member_page_ids: list[str] = Field(default_factory=list)
+    family_member_urls: list[str] = Field(default_factory=list)
+    family_descendants: list[WorkflowFamilyDescendantSummary] = Field(default_factory=list)
     safety: PageSafetySummary = Field(default_factory=PageSafetySummary)
     next_steps: list[NextStepHint] = Field(default_factory=list)
     background_navigation_clusters: list[BackgroundNavigationCluster] = Field(default_factory=list)
@@ -486,6 +510,7 @@ class DiscoverySummary(StrictModel):
     top_compressed_route_families: list[dict[str, int | str]] = Field(default_factory=list)
     pages_with_most_compression: list[dict[str, int | str]] = Field(default_factory=list)
     strongest_primary_pages: list[dict[str, int | str]] = Field(default_factory=list)
+    workflow_families: list[WorkflowFamilySummary] = Field(default_factory=list)
     intent_populated_pages: int = 0
     materially_changed_next_steps: list[dict[str, object]] = Field(default_factory=list)
 

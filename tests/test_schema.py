@@ -99,6 +99,12 @@ def test_page_record_serializes_flat_schema_fields() -> None:
     assert dumped["primary_page_intent"] == "navigate"
     assert dumped["primary_actions"] == ["Turn editing on"]
     assert dumped["task_relevance_score"] == 72
+    assert dumped["workflow_family"] is None
+    assert dumped["family_label"] is None
+    assert dumped["family_role"] is None
+    assert dumped["family_member_page_ids"] == []
+    assert dumped["family_member_urls"] == []
+    assert dumped["family_descendants"] == []
     assert dumped["safety"]["page_risk_level"] == "medium"
     assert dumped["next_steps"] == []
     assert "features" not in dumped

@@ -12,7 +12,7 @@ without changing the artifact contract or the graph rules themselves.
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from moodle_sitemap.discover import normalize_url
 from moodle_sitemap.models import (
@@ -24,9 +24,19 @@ from moodle_sitemap.models import (
     NextStepHint,
     PageRecord,
     PageType,
+    WorkflowFamilyDescendantSummary,
+    WorkflowFamilySummary,
     WorkflowEdge,
     WorkflowEdgeType,
 )
+
+ADMIN_TASK_FAMILY_KEY = "admin_task_management"
+ADMIN_TASK_FAMILY_LABEL = "Admin task management"
+ADMIN_TASK_MEMBER_ROLES = {
+    "/admin/tool/task/scheduledtasks.php": "scheduled",
+    "/admin/tool/task/adhoctasks.php": "adhoc",
+    "/admin/tool/task/runningtasks.php": "running",
+}
 
 
 @dataclass(frozen=True)
@@ -534,6 +544,100 @@ def low_value_variant_group(url: str) -> str | None:
 
     if urlparse(url).path == "/calendar/view.php":
         return "/calendar/view.php"
+    return None
+
+
+def annotate_workflow_families(pages: list[PageRecord]) -> list[WorkflowFamilySummary]:
+    """Attach compact family metadata for related visited workflow surfaces."""
+
+    admin_task_members = [
+        page
+        for page in pages
+        if page.page_type == PageType.ADMIN_TASK_PAGE
+        and urlparse(page.normalized_url).path.lower() in ADMIN_TASK_MEMBER_ROLES
+    ]
+    if not admin_task_members:
+        return []
+
+    member_page_ids = [page.page_id for page in admin_task_members]
+    member_page_urls = [page.normalized_url for page in admin_task_members]
+    family_roles = [
+        ADMIN_TASK_MEMBER_ROLES[urlparse(page.normalized_url).path.lower()]
+        for page in admin_task_members
+    ]
+    descendants = summarize_admin_task_descendants(admin_task_members, visited_urls=set(member_page_urls))
+
+    for page in admin_task_members:
+        family_role = ADMIN_TASK_MEMBER_ROLES[urlparse(page.normalized_url).path.lower()]
+        page.workflow_family = ADMIN_TASK_FAMILY_KEY
+        page.family_label = ADMIN_TASK_FAMILY_LABEL
+        page.family_role = family_role
+        page.family_member_page_ids = member_page_ids
+        page.family_member_urls = member_page_urls
+        page.family_descendants = descendants
+
+    return [
+        WorkflowFamilySummary(
+            family_key=ADMIN_TASK_FAMILY_KEY,
+            family_label=ADMIN_TASK_FAMILY_LABEL,
+            member_page_ids=member_page_ids,
+            member_page_urls=member_page_urls,
+            family_roles=family_roles,
+            descendants=descendants,
+        )
+    ]
+
+
+def summarize_admin_task_descendants(
+    pages: list[PageRecord],
+    *,
+    visited_urls: set[str],
+) -> list[WorkflowFamilyDescendantSummary]:
+    """Summarize discovered descendant routes beneath visited admin task pages."""
+
+    grouped: dict[tuple[str, str | None], list[str]] = defaultdict(list)
+    seen_urls: set[str] = set()
+
+    for page in pages:
+        for url in page.discovered_links:
+            normalized = normalize_url(url)
+            if normalized in visited_urls or normalized in seen_urls:
+                continue
+            descendant_kind = infer_admin_task_descendant_kind(normalized)
+            if descendant_kind is None:
+                continue
+            route = urlparse(normalized).path or "/"
+            grouped[(route, descendant_kind)].append(normalized)
+            seen_urls.add(normalized)
+
+    summaries: list[WorkflowFamilyDescendantSummary] = []
+    for (route_family, descendant_kind), urls in sorted(grouped.items()):
+        summaries.append(
+            WorkflowFamilyDescendantSummary(
+                route_family=route_family,
+                descendant_kind=descendant_kind,
+                count=len(urls),
+                representative_urls=urls[:3],
+                discovered_only=True,
+            )
+        )
+    return summaries
+
+
+def infer_admin_task_descendant_kind(url: str) -> str | None:
+    """Classify a discovered admin task descendant with a compact route hint."""
+
+    parsed = urlparse(url)
+    path = parsed.path.lower()
+    query = parse_qs(parsed.query)
+    if path == "/admin/tool/task/schedule_task.php":
+        return "scheduled_task_detail"
+    if path == "/admin/tool/task/run_adhoctasks.php":
+        return "adhoc_task_run"
+    if path == "/admin/tool/task/scheduledtasks.php" and query.get("action") == ["edit"]:
+        return "scheduled_task_edit"
+    if path == "/admin/tool/task/adhoctasks.php" and query:
+        return "adhoc_task_filter"
     return None
 
 

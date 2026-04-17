@@ -303,6 +303,62 @@ def test_admin_search_promotes_scheduled_tasks_as_task_destination() -> None:
     assert admin_search.next_steps[0].page_id == "0002-scheduled-tasks"
 
 
+def test_admin_task_pages_get_family_metadata_and_descendant_summary() -> None:
+    admin_search = make_page(
+        "0001-admin-search",
+        "https://example.com/admin/search.php",
+        page_type=PageType.ADMIN_SEARCH,
+        navigation=[
+            NavigationItem(
+                label="Scheduled tasks",
+                url="https://example.com/admin/tool/task/scheduledtasks.php",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+    )
+    scheduled = make_page(
+        "0002-scheduled",
+        "https://example.com/admin/tool/task/scheduledtasks.php",
+        page_type=PageType.ADMIN_TASK_PAGE,
+    )
+    scheduled.discovered_links = [
+        "https://example.com/admin/tool/task/scheduledtasks.php?action=edit&task=core%5Ctask%5Ctask_log_cleanup_task",
+        "https://example.com/admin/tool/task/schedule_task.php?task=core%5Ctask%5Ctask_log_cleanup_task",
+    ]
+    adhoc = make_page(
+        "0003-adhoc",
+        "https://example.com/admin/tool/task/adhoctasks.php",
+        page_type=PageType.ADMIN_TASK_PAGE,
+    )
+    adhoc.discovered_links = [
+        "https://example.com/admin/tool/task/run_adhoctasks.php?classname=%5Ccore%5Ctask%5Cbuild_installed_themes_task"
+    ]
+    running = make_page(
+        "0004-running",
+        "https://example.com/admin/tool/task/runningtasks.php",
+        page_type=PageType.ADMIN_TASK_PAGE,
+    )
+
+    graph = derive_workflow_graph([admin_search, scheduled, adhoc, running])
+
+    assert len(graph.workflow_families) == 1
+    family = graph.workflow_families[0]
+    assert family.family_key == "admin_task_management"
+    assert family.family_roles == ["scheduled", "adhoc", "running"]
+    assert [item.descendant_kind for item in family.descendants] == [
+        "adhoc_task_run",
+        "scheduled_task_detail",
+        "scheduled_task_edit",
+    ]
+    assert scheduled.workflow_family == "admin_task_management"
+    assert scheduled.family_role == "scheduled"
+    assert scheduled.family_label == "Admin task management"
+    assert scheduled.family_member_page_ids == ["0002-scheduled", "0003-adhoc", "0004-running"]
+    assert len(scheduled.family_descendants) == 3
+
+
 def test_stronger_explicit_edge_prunes_weaker_discovered_link_duplicate() -> None:
     source = make_page(
         "0001-admin-search",

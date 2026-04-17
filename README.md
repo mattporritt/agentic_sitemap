@@ -779,6 +779,27 @@ Each cluster is explicit and inspectable. It summarizes:
 
 This is meant to preserve awareness of background navigation while keeping the main graph focused on stronger task and support paths.
 
+### Admin task workflow family
+
+Visited admin task list pages now carry compact relationship metadata so downstream tools can tell that:
+
+- `scheduledtasks.php`
+- `adhoctasks.php`
+- `runningtasks.php`
+
+belong to the same admin task-management workflow family.
+
+These pages can now include:
+
+- `workflow_family`
+- `family_label`
+- `family_role`
+- `family_member_page_ids`
+- `family_member_urls`
+- `family_descendants`
+
+`family_descendants` is a compact discovered-only summary of deeper routes such as `schedule_task.php`, `run_adhoctasks.php`, and `scheduledtasks.php?action=edit...`. Those descendants are intentionally summarized rather than promoted to first-class visited pages in the current conservative crawl boundary.
+
 ### Affordance safety hints
 
 Action and form affordances include conservative heuristic safety hints:

@@ -21,7 +21,14 @@ from urllib.parse import parse_qsl, urlparse
 
 from moodle_sitemap.config import load_smoke_config
 from moodle_sitemap.crawl import CrawlConfig, ProgressCallback, crawl_site
-from moodle_sitemap.models import CrawlTimingSummary, DiscoverySummary, PageRecord, SettleStrategy, SiteManifest
+from moodle_sitemap.models import (
+    CrawlTimingSummary,
+    DiscoverySummary,
+    PageRecord,
+    SettleStrategy,
+    SiteManifest,
+    WorkflowFamilySummary,
+)
 
 
 @dataclass(slots=True)
@@ -276,6 +283,7 @@ def build_discovery_summary(
         top_compressed_route_families=top_compressed_route_families(run_dir),
         pages_with_most_compression=pages_with_most_compression(run_dir, pages),
         strongest_primary_pages=strongest_primary_pages(pages),
+        workflow_families=load_workflow_families(run_dir),
         intent_populated_pages=sum(1 for page in pages if page.primary_page_intent.value != "unknown"),
         materially_changed_next_steps=load_materially_changed_next_steps(run_dir),
     )
@@ -427,6 +435,14 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
             )
     else:
         lines.append("- None")
+    lines.extend(["", "## Workflow Families"])
+    if summary.workflow_families:
+        for family in summary.workflow_families:
+            lines.append(
+                f"- `{family.family_label}`: {len(family.member_page_ids)} visited page(s), {len(family.descendants)} discovered descendant group(s)"
+            )
+    else:
+        lines.append("- None")
     lines.extend(["", "## Materially Changed Next Steps"])
     if summary.materially_changed_next_steps:
         for item in summary.materially_changed_next_steps[:5]:
@@ -507,6 +523,16 @@ def load_materially_changed_next_steps(run_dir: Path) -> list[dict[str, object]]
     if not raw:
         return []
     return raw.get("next_step_changed_pages", [])
+
+
+def load_workflow_families(run_dir: Path) -> list[WorkflowFamilySummary]:
+    raw = load_workflow_graph_raw(run_dir)
+    if not raw:
+        return []
+    items = raw.get("workflow_families", [])
+    if not isinstance(items, list):
+        return []
+    return [WorkflowFamilySummary.model_validate(item) for item in items if isinstance(item, dict)]
 
 
 def load_workflow_graph_raw(run_dir: Path) -> dict[str, object]:

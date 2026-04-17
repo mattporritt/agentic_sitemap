@@ -128,6 +128,30 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
                 "next_step_changed_pages": [
                     {"page_id": "0002-course-view", "before_targets": ["https://example.com/custom/page.php?foo=1"], "after_targets": ["https://example.com/course/view.php?id=4"]}
                 ],
+                "workflow_families": [
+                    {
+                        "family_key": "admin_task_management",
+                        "family_label": "Admin task management",
+                        "member_page_ids": ["0004-scheduled", "0005-adhoc", "0006-running"],
+                        "member_page_urls": [
+                            "https://example.com/admin/tool/task/scheduledtasks.php",
+                            "https://example.com/admin/tool/task/adhoctasks.php",
+                            "https://example.com/admin/tool/task/runningtasks.php",
+                        ],
+                        "family_roles": ["scheduled", "adhoc", "running"],
+                        "descendants": [
+                            {
+                                "route_family": "/admin/tool/task/schedule_task.php",
+                                "descendant_kind": "scheduled_task_detail",
+                                "count": 2,
+                                "representative_urls": [
+                                    "https://example.com/admin/tool/task/schedule_task.php?task=core%5Ctask%5Ctask_log_cleanup_task"
+                                ],
+                                "discovered_only": True,
+                            }
+                        ],
+                    }
+                ],
                 "background_clusters": [
                     {
                         "cluster_type": "generic_admin_navigation_cluster",
@@ -228,6 +252,8 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert summary.top_compressed_route_families[0]["family_key"] == "/admin/tool"
     assert summary.pages_with_most_compression[0]["page_id"] == "0002-course-view"
     assert summary.strongest_primary_pages[0]["page_id"] == "0001-my"
+    assert summary.workflow_families[0].family_key == "admin_task_management"
+    assert summary.workflow_families[0].descendants[0].descendant_kind == "scheduled_task_detail"
     assert summary.intent_populated_pages == 0
     assert summary.materially_changed_next_steps[0]["page_id"] == "0002-course-view"
 
