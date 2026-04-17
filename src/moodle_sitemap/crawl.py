@@ -35,9 +35,17 @@ from moodle_sitemap.discover import (
 from moodle_sitemap.extract.dom import extract_anchor_hrefs, extract_page_features, refine_task_summary_for_page_type
 from moodle_sitemap.extract.footer import extract_footer_info
 from moodle_sitemap.extract.network import NetworkRecorder
-from moodle_sitemap.models import BrowserEngine, ManifestSummary, PageRecord, PageType, SiteManifest
+from moodle_sitemap.models import (
+    BrowserEngine,
+    ManifestSummary,
+    PageRecord,
+    PageTimingRecord,
+    PageType,
+    SiteManifest,
+)
 from moodle_sitemap.safety import summarize_page_safety
 from moodle_sitemap.storage.json_store import JsonStore
+from moodle_sitemap.timing import build_crawl_timing_summary, route_family
 from moodle_sitemap.workflow import derive_workflow_graph
 
 
@@ -113,6 +121,7 @@ def crawl_site(
     """
 
     crawl_started_at = datetime.now(timezone.utc)
+    run_started = perf_counter()
     start_url = normalize_url(config.site_url)
     parsed_site = urlparse(start_url)
     origin = f"{parsed_site.scheme}://{parsed_site.netloc}"
@@ -124,6 +133,7 @@ def crawl_site(
     queue: deque[tuple[str, str | None, int]] = deque([(start_url, None, 0)])
     visit_index.mark_queued(start_url)
     page_records: list[PageRecord] = []
+    page_timings: list[PageTimingRecord] = []
 
     with open_browser(headless=config.headless, engine=config.browser_engine) as session:
         login_to_moodle(
@@ -136,14 +146,16 @@ def crawl_site(
         recorder.attach()
 
         try:
+            crawl_loop_started = perf_counter()
             while queue and len(page_records) < config.max_pages:
                 target_url, referrer, depth = queue.popleft()
                 visit_index.mark_dequeued(target_url)
                 if visit_index.should_skip_target(target_url):
                     continue
 
+                page_started = perf_counter()
                 recorder.reset()
-                load_started = perf_counter()
+                navigation_started = perf_counter()
                 try:
                     response = session.page.goto(target_url, wait_until="domcontentloaded")
                 except PlaywrightError as error:
@@ -151,11 +163,14 @@ def crawl_site(
                         visit_index.visited_targets.add(target_url)
                         continue
                     raise
+                navigation_duration_seconds = perf_counter() - navigation_started
+                settle_started = perf_counter()
                 try:
                     session.page.wait_for_load_state("networkidle", timeout=5_000)
                 except PlaywrightTimeoutError:
                     pass
-                load_duration_seconds = perf_counter() - load_started
+                settle_duration_seconds = perf_counter() - settle_started
+                load_duration_seconds = navigation_duration_seconds + settle_duration_seconds
 
                 final_url = normalize_url(session.page.url)
                 if not same_origin(final_url, origin):
@@ -166,6 +181,7 @@ def crawl_site(
                 if not visit_index.mark_visited(target_url, normalized_url):
                     continue
 
+                extraction_started = perf_counter()
                 features = extract_page_features(session.page)
                 discovered_links = filter_discovered_links(
                     extract_anchor_hrefs(session.page),
@@ -199,8 +215,25 @@ def crawl_site(
                     crawl_depth=depth,
                     load_duration_seconds=round(load_duration_seconds, 6),
                 )
+                extraction_duration_seconds = perf_counter() - extraction_started
+                write_started = perf_counter()
                 store.write_page(page_record)
+                write_duration_seconds = perf_counter() - write_started
                 page_records.append(page_record)
+                page_timings.append(
+                    PageTimingRecord(
+                        page_id=page_record.page_id,
+                        normalized_url=page_record.normalized_url,
+                        page_type=page_record.page_type.value,
+                        route_family=route_family(page_record.normalized_url),
+                        crawl_depth=depth,
+                        total_duration_seconds=round(perf_counter() - page_started, 6),
+                        navigation_duration_seconds=round(navigation_duration_seconds, 6),
+                        settle_duration_seconds=round(settle_duration_seconds, 6),
+                        extraction_duration_seconds=round(extraction_duration_seconds, 6),
+                        write_duration_seconds=round(write_duration_seconds, 6),
+                    )
+                )
                 if progress_callback:
                     progress_callback(page_record, len(page_records), config.max_pages)
 
@@ -215,9 +248,12 @@ def crawl_site(
                     queue.append((link, final_url, depth + 1))
         finally:
             recorder.detach()
+        crawl_loop_duration_seconds = perf_counter() - crawl_loop_started
 
     crawl_finished_at = datetime.now(timezone.utc)
+    workflow_started = perf_counter()
     workflow_graph = derive_workflow_graph(page_records, role_profile=config.role_profile)
+    workflow_derivation_duration_seconds = perf_counter() - workflow_started
     for page_record in page_records:
         store.write_page(page_record)
     manifest = SiteManifest(
@@ -236,8 +272,53 @@ def crawl_site(
         ),
         pages=page_records,
     )
+    manifest_write_started = perf_counter()
     store.write_manifest(manifest)
+    manifest_write_duration_seconds = perf_counter() - manifest_write_started
+    workflow_write_started = perf_counter()
     store.write_workflow_graph(workflow_graph)
+    workflow_write_duration_seconds = perf_counter() - workflow_write_started
+    timing_summary_started = perf_counter()
+    timing_summary = build_crawl_timing_summary(
+        run_dir=config.output_dir,
+        page_timings=page_timings,
+        total_run_duration_seconds=perf_counter() - run_started,
+        crawl_loop_duration_seconds=crawl_loop_duration_seconds,
+        workflow_derivation_duration_seconds=workflow_derivation_duration_seconds,
+        manifest_write_duration_seconds=manifest_write_duration_seconds,
+        workflow_write_duration_seconds=workflow_write_duration_seconds,
+    )
+    page_timings_write_started = perf_counter()
+    store.write_page_timings(page_timings)
+    page_timings_write_duration_seconds = perf_counter() - page_timings_write_started
+    timing_summary = timing_summary.model_copy(
+        update={
+            "run_stage_totals": {
+                **timing_summary.run_stage_totals,
+                "page_timings_write_duration_seconds": round(
+                    page_timings_write_duration_seconds, 6
+                ),
+                "timing_summary_generation_duration_seconds": round(
+                    perf_counter() - timing_summary_started, 6
+                ),
+            }
+        }
+    )
+    timing_summary_write_started = perf_counter()
+    store.write_timing_summary(timing_summary)
+    timing_summary_write_duration_seconds = perf_counter() - timing_summary_write_started
+    timing_summary = timing_summary.model_copy(
+        update={
+            "total_run_duration_seconds": round(perf_counter() - run_started, 6),
+            "run_stage_totals": {
+                **timing_summary.run_stage_totals,
+                "timing_summary_write_duration_seconds": round(
+                    timing_summary_write_duration_seconds, 6
+                ),
+            },
+        }
+    )
+    store.write_timing_summary(timing_summary)
     return manifest
 
 

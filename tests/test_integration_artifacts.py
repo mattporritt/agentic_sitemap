@@ -12,12 +12,14 @@ from moodle_sitemap.compare_runs import compare_runs
 from moodle_sitemap.models import (
     ActionAffordance,
     AffordanceElementType,
+    CrawlTimingSummary,
     EdgeRelevance,
     EdgeWeight,
     LikelyIntent,
     NextStepHint,
     PageAffordances,
     PageRecord,
+    PageTimingRecord,
     PageType,
     SiteManifest,
     TaskSpecList,
@@ -26,6 +28,7 @@ from moodle_sitemap.models import (
     WorkflowGraph,
 )
 from moodle_sitemap.task_validation import validate_tasks_for_run
+from moodle_sitemap.storage.json_store import JsonStore
 
 
 def make_page(
@@ -229,3 +232,40 @@ def test_compare_runs_writes_role_specific_artifacts_from_saved_runs(tmp_path: P
     assert payload["right_role_profile"] == "student"
     assert payload["pages_only_in_left"] == ["https://example.com/course/view.php?id=4"]
     assert payload["pages_only_in_right"] == ["https://example.com/message/index.php"]
+
+
+def test_json_store_writes_timing_artifacts(tmp_path: Path) -> None:
+    store = JsonStore(tmp_path / "run")
+    store.prepare()
+
+    timings_path = store.write_page_timings(
+        [
+            PageTimingRecord(
+                page_id="0001-my",
+                normalized_url="https://example.com/my",
+                page_type="dashboard",
+                route_family="/my",
+                total_duration_seconds=1.0,
+                navigation_duration_seconds=0.4,
+                settle_duration_seconds=0.3,
+                extraction_duration_seconds=0.2,
+                write_duration_seconds=0.1,
+            )
+        ]
+    )
+    summary_path = store.write_timing_summary(
+        CrawlTimingSummary(
+            run_dir=str(tmp_path / "run"),
+            total_run_duration_seconds=3.0,
+            crawl_loop_duration_seconds=2.5,
+            page_count=1,
+            average_page_duration_seconds=1.0,
+            median_page_duration_seconds=1.0,
+        )
+    )
+
+    timings_payload = json.loads(timings_path.read_text(encoding="utf-8"))
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert timings_payload[0]["page_id"] == "0001-my"
+    assert summary_payload["page_count"] == 1

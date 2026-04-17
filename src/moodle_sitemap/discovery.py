@@ -16,11 +16,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from time import perf_counter
 from urllib.parse import parse_qsl, urlparse
 
 from moodle_sitemap.config import load_smoke_config
 from moodle_sitemap.crawl import CrawlConfig, ProgressCallback, crawl_site
-from moodle_sitemap.models import DiscoverySummary, PageRecord, SiteManifest
+from moodle_sitemap.models import CrawlTimingSummary, DiscoverySummary, PageRecord, SiteManifest
 
 
 @dataclass(slots=True)
@@ -74,11 +75,76 @@ def run_discovery(
     baseline_manifest = load_optional_manifest(
         baseline_manifest_path or find_latest_manifest(Path("verification-runs"))
     )
+    discovery_summary_started = perf_counter()
     summary = build_discovery_summary(manifest, run_dir=run_dir, baseline_manifest=baseline_manifest)
-    summary_path = run_dir / "discovery-summary.json"
-    summary_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+    discovery_summary_generation_duration_seconds = perf_counter() - discovery_summary_started
+    summary = summary.model_copy(
+        update={
+            "run_stage_totals": {
+                **summary.run_stage_totals,
+                "discovery_summary_generation_duration_seconds": round(
+                    discovery_summary_generation_duration_seconds, 6
+                ),
+            }
+        }
+    )
     report_path = run_dir / "discovery-summary.md"
+    summary_path = run_dir / "discovery-summary.json"
+    summary_write_started = perf_counter()
+    summary_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+    discovery_summary_write_duration_seconds = perf_counter() - summary_write_started
+    summary = summary.model_copy(
+        update={
+            "run_stage_totals": {
+                **summary.run_stage_totals,
+                "discovery_summary_write_duration_seconds": round(
+                    discovery_summary_write_duration_seconds, 6
+                ),
+            }
+        }
+    )
+    report_write_started = perf_counter()
     report_path.write_text(render_discovery_markdown(summary), encoding="utf-8")
+    discovery_report_write_duration_seconds = perf_counter() - report_write_started
+    summary = summary.model_copy(
+        update={
+            "run_stage_totals": {
+                **summary.run_stage_totals,
+                "discovery_report_write_duration_seconds": round(
+                    discovery_report_write_duration_seconds, 6
+                ),
+            }
+        }
+    )
+    summary_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+    timing_summary = load_timing_summary(run_dir)
+    if timing_summary is not None:
+        updated_timing_summary = timing_summary.model_copy(
+            update={
+                "total_run_duration_seconds": round(
+                    timing_summary.total_run_duration_seconds
+                    + discovery_summary_generation_duration_seconds
+                    + discovery_summary_write_duration_seconds
+                    + discovery_report_write_duration_seconds,
+                    6,
+                ),
+                "run_stage_totals": {
+                    **timing_summary.run_stage_totals,
+                    "discovery_summary_generation_duration_seconds": round(
+                        discovery_summary_generation_duration_seconds, 6
+                    ),
+                    "discovery_summary_write_duration_seconds": round(
+                        discovery_summary_write_duration_seconds, 6
+                    ),
+                    "discovery_report_write_duration_seconds": round(
+                        discovery_report_write_duration_seconds, 6
+                    ),
+                },
+            }
+        )
+        (run_dir / "timing-summary.json").write_text(
+            updated_timing_summary.model_dump_json(indent=2), encoding="utf-8"
+        )
 
     return DiscoveryRunResult(
         run_dir=run_dir,
@@ -98,6 +164,7 @@ def build_discovery_summary(
     """Build the machine-readable summary for a saved discovery run."""
 
     pages = manifest.pages
+    timing_summary = load_timing_summary(run_dir)
     route_family_counts = Counter(route_family(page.normalized_url) for page in pages)
     query_heavy_counts = Counter(
         route_signature(page.normalized_url)
@@ -177,6 +244,10 @@ def build_discovery_summary(
         crawl_duration_seconds=(
             manifest.crawl_finished_at - manifest.crawl_started_at
         ).total_seconds(),
+        average_page_duration_seconds=timing_summary.average_page_duration_seconds if timing_summary else 0.0,
+        median_page_duration_seconds=timing_summary.median_page_duration_seconds if timing_summary else 0.0,
+        page_stage_totals=timing_summary.page_stage_totals if timing_summary else {},
+        run_stage_totals=timing_summary.run_stage_totals if timing_summary else {},
         max_depth_reached=max((page.crawl_depth for page in pages), default=0),
         page_type_counts=manifest.summary.page_type_counts,
         top_route_families=[
@@ -188,7 +259,9 @@ def build_discovery_summary(
             for signature, count in query_heavy_counts.most_common(10)
         ],
         canonicalization_events=canonicalization_events,
-        slowest_pages=slowest_pages,
+        slowest_pages=timing_summary.slowest_pages if timing_summary else slowest_pages,
+        slowest_extraction_pages=timing_summary.slowest_extraction_pages if timing_summary else [],
+        slowest_route_families=timing_summary.slowest_route_families if timing_summary else [],
         unknown_pages_detail=unknown_pages_detail,
         weak_classification_candidates=weak_candidates,
         exclusion_candidates=exclusion_candidates,
@@ -288,7 +361,14 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
         f"- Compressed workflow edges: `{summary.workflow_compressed_edge_count}`",
         f"- Background clusters: `{summary.workflow_cluster_count}`",
         f"- Crawl duration (seconds): `{summary.crawl_duration_seconds}`",
+        f"- Average page duration (seconds): `{summary.average_page_duration_seconds}`",
+        f"- Median page duration (seconds): `{summary.median_page_duration_seconds}`",
         f"- Max depth reached: `{summary.max_depth_reached}`",
+        "",
+        "## Timing Breakdown",
+        "",
+        f"- Page stage totals: `{summary.page_stage_totals}`",
+        f"- Run stage totals: `{summary.run_stage_totals}`",
         "",
         "## Workflow Signal",
         "",
@@ -355,6 +435,14 @@ def render_discovery_markdown(summary: DiscoverySummary) -> str:
             lines.append(f"- `{item['normalized_url']}`")
     else:
         lines.append("- None")
+    lines.extend(["", "## Slowest Route Families"])
+    if summary.slowest_route_families:
+        for item in summary.slowest_route_families[:5]:
+            lines.append(
+                f"- `{item['route_family']}`: avg {item['average_duration_seconds']}s over {item['page_count']} page(s)"
+            )
+    else:
+        lines.append("- None")
     lines.extend(["", "## Recommended Next Review Areas"])
     recommendations = recommended_next_actions(summary)
     for item in recommendations:
@@ -389,6 +477,13 @@ def load_workflow_edge_type_counts(run_dir: Path) -> dict[str, int]:
         return {}
     raw = json.loads(workflow_path.read_text(encoding="utf-8"))
     return raw.get("edge_type_counts", {})
+
+
+def load_timing_summary(run_dir: Path) -> CrawlTimingSummary | None:
+    timing_path = run_dir / "timing-summary.json"
+    if not timing_path.exists():
+        return None
+    return CrawlTimingSummary.model_validate_json(timing_path.read_text(encoding="utf-8"))
 
 
 def load_workflow_edge_counts(run_dir: Path, key: str) -> dict[str, int]:

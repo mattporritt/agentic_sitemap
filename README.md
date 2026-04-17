@@ -280,6 +280,7 @@ What this does:
 - writes the crawl into a timestamped, git-ignored discovery folder
 - writes a machine-readable `discovery-summary.json`
 - writes a short human-readable `discovery-summary.md`
+- writes `page-timings.json` and `timing-summary.json` for crawl timing analysis
 - prints per-page crawl progress to the CLI
 
 Example output:
@@ -289,6 +290,8 @@ discovery-runs/
   2026-04-08T110000Z/
     sitemap.json
     workflow-edges.json
+    page-timings.json
+    timing-summary.json
     discovery-summary.json
     discovery-summary.md
     pages/
@@ -311,6 +314,7 @@ The discovery summary is meant to highlight what a larger crawl surfaced, includ
 - query-heavy routes that may need future exclusions
 - canonicalization events still worth reviewing
 - slowest pages
+- crawl timing totals and slowest route families
 - remaining unknown or weakly classified pages
 
 ### Role-specific validation

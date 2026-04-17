@@ -13,7 +13,7 @@ from moodle_sitemap.discovery import (
     route_signature,
     load_optional_manifest,
 )
-from moodle_sitemap.models import PageAffordances, PageRecord, PageType, SiteManifest
+from moodle_sitemap.models import CrawlTimingSummary, PageAffordances, PageRecord, PageType, SiteManifest
 
 
 def make_page(
@@ -140,6 +140,52 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
         ),
         encoding="utf-8",
     )
+    (run_dir / "timing-summary.json").write_text(
+        CrawlTimingSummary(
+            run_dir=str(run_dir),
+            total_run_duration_seconds=61.0,
+            crawl_loop_duration_seconds=59.5,
+            page_count=3,
+            average_page_duration_seconds=0.833333,
+            median_page_duration_seconds=0.8,
+            page_stage_totals={
+                "navigation_duration_seconds": 1.0,
+                "settle_duration_seconds": 0.7,
+                "extraction_duration_seconds": 0.9,
+                "write_duration_seconds": 0.2,
+                "total_page_duration_seconds": 2.5,
+            },
+            run_stage_totals={
+                "workflow_derivation_duration_seconds": 0.3,
+                "manifest_write_duration_seconds": 0.1,
+            },
+            slowest_pages=[
+                {
+                    "page_id": "0002-course-view",
+                    "normalized_url": "https://example.com/course/view.php?id=4",
+                    "page_type": "course_view",
+                    "total_duration_seconds": 1.5,
+                }
+            ],
+            slowest_extraction_pages=[
+                {
+                    "page_id": "0003-unknown",
+                    "normalized_url": "https://example.com/custom/page.php?foo=1",
+                    "page_type": "unknown",
+                    "extraction_duration_seconds": 0.6,
+                }
+            ],
+            slowest_route_families=[
+                {
+                    "route_family": "/course/view.php",
+                    "page_count": 1,
+                    "average_duration_seconds": 1.5,
+                    "total_duration_seconds": 1.5,
+                }
+            ],
+        ).model_dump_json(indent=2),
+        encoding="utf-8",
+    )
 
     summary = build_discovery_summary(manifest, run_dir=run_dir, baseline_manifest=baseline)
 
@@ -156,9 +202,15 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     assert summary.workflow_edge_weight_counts["high"] == 1
     assert summary.workflow_edge_relevance_counts["task"] == 1
     assert summary.workflow_pre_dedup_edge_weight_counts["medium"] == 1
+    assert summary.average_page_duration_seconds == 0.833333
+    assert summary.median_page_duration_seconds == 0.8
+    assert summary.page_stage_totals["navigation_duration_seconds"] == 1.0
+    assert summary.run_stage_totals["workflow_derivation_duration_seconds"] == 0.3
     assert summary.top_route_families[0]["route_family"] in {"/course/view.php", "/custom/page.php", "/my"}
     assert summary.query_heavy_routes
     assert summary.slowest_pages[0]["normalized_url"] == "https://example.com/course/view.php?id=4"
+    assert summary.slowest_extraction_pages[0]["page_id"] == "0003-unknown"
+    assert summary.slowest_route_families[0]["route_family"] == "/course/view.php"
     assert summary.unknown_pages_detail[0]["normalized_url"] == "https://example.com/custom/page.php?foo=1"
     assert "/course/view.php" in summary.newly_seen_route_families
     assert summary.top_task_edge_page_types[0]["page_type"] == "course_view"

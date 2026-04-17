@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from moodle_sitemap.models import PageRecord, SiteManifest, WorkflowGraph
+from moodle_sitemap.models import CrawlTimingSummary, PageRecord, PageTimingRecord, SiteManifest, WorkflowGraph
 
 
 class JsonStore:
@@ -32,3 +32,16 @@ class JsonStore:
         workflow_path = self.output_dir / "workflow-edges.json"
         workflow_path.write_text(workflow_graph.model_dump_json(indent=2), encoding="utf-8")
         return workflow_path
+
+    def write_page_timings(self, page_timings: list[PageTimingRecord]) -> Path:
+        timings_path = self.output_dir / "page-timings.json"
+        timings_path.write_text(
+            json.dumps([page.model_dump() for page in page_timings], indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return timings_path
+
+    def write_timing_summary(self, summary: CrawlTimingSummary) -> Path:
+        summary_path = self.output_dir / "timing-summary.json"
+        summary_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+        return summary_path

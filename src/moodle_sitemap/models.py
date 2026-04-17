@@ -399,6 +399,33 @@ class PageRecord(StrictModel):
     captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class PageTimingRecord(StrictModel):
+    page_id: str
+    normalized_url: str
+    page_type: str
+    route_family: str
+    crawl_depth: int = 0
+    total_duration_seconds: float
+    navigation_duration_seconds: float
+    settle_duration_seconds: float
+    extraction_duration_seconds: float
+    write_duration_seconds: float
+
+
+class CrawlTimingSummary(StrictModel):
+    run_dir: str
+    total_run_duration_seconds: float
+    crawl_loop_duration_seconds: float
+    page_count: int
+    average_page_duration_seconds: float = 0.0
+    median_page_duration_seconds: float = 0.0
+    page_stage_totals: dict[str, float] = Field(default_factory=dict)
+    run_stage_totals: dict[str, float] = Field(default_factory=dict)
+    slowest_pages: list[dict[str, int | float | str]] = Field(default_factory=list)
+    slowest_extraction_pages: list[dict[str, int | float | str]] = Field(default_factory=list)
+    slowest_route_families: list[dict[str, int | float | str]] = Field(default_factory=list)
+
+
 class ManifestSummary(StrictModel):
     total_pages: int
     unknown_pages: int
@@ -427,12 +454,18 @@ class DiscoverySummary(StrictModel):
     workflow_pre_dedup_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
     workflow_pre_dedup_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
     crawl_duration_seconds: float
+    average_page_duration_seconds: float = 0.0
+    median_page_duration_seconds: float = 0.0
+    page_stage_totals: dict[str, float] = Field(default_factory=dict)
+    run_stage_totals: dict[str, float] = Field(default_factory=dict)
     max_depth_reached: int
     page_type_counts: dict[str, int] = Field(default_factory=dict)
     top_route_families: list[dict[str, int | str]] = Field(default_factory=list)
     query_heavy_routes: list[dict[str, int | str]] = Field(default_factory=list)
     canonicalization_events: int = 0
     slowest_pages: list[dict[str, int | float | str]] = Field(default_factory=list)
+    slowest_extraction_pages: list[dict[str, int | float | str]] = Field(default_factory=list)
+    slowest_route_families: list[dict[str, int | float | str]] = Field(default_factory=list)
     unknown_pages_detail: list[dict[str, str]] = Field(default_factory=list)
     weak_classification_candidates: list[dict[str, str]] = Field(default_factory=list)
     exclusion_candidates: list[dict[str, int | str]] = Field(default_factory=list)
