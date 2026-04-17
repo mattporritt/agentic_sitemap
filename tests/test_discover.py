@@ -35,6 +35,21 @@ def test_filter_discovered_links_keeps_same_origin_safe_unique_links() -> None:
     assert result == ["https://example.com/course/view.php?id=2"]
 
 
+def test_filter_discovered_links_skips_download_like_targets() -> None:
+    links = [
+        "/admin/tool/uploaduser/example.csv",
+        "/course/view.php?id=2",
+    ]
+
+    result = filter_discovered_links(
+        links,
+        base_url="https://example.com/my/",
+        origin="https://example.com",
+    )
+
+    assert result == ["https://example.com/course/view.php?id=2"]
+
+
 def test_normalize_url_removes_trailing_slash_for_non_root() -> None:
     assert normalize_url("https://example.com/my/") == "https://example.com/my"
 

@@ -42,6 +42,30 @@ UNSAFE_QUERY_KEYS = {
     "logout",
 }
 
+DOWNLOAD_FILE_EXTENSIONS = {
+    ".csv",
+    ".zip",
+    ".gz",
+    ".tgz",
+    ".bz2",
+    ".xz",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".mp3",
+    ".mp4",
+}
+
 
 def normalize_url(url: str, *, base_url: str | None = None) -> str:
     absolute = urljoin(base_url, url) if base_url else url
@@ -86,6 +110,8 @@ def is_safe_link(url: str) -> bool:
         return False
 
     lowered_path = parsed.path.lower()
+    if any(lowered_path.endswith(extension) for extension in DOWNLOAD_FILE_EXTENSIONS):
+        return False
     if any(part in lowered_path for part in UNSAFE_PATH_PARTS):
         return False
 

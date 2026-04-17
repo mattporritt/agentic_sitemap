@@ -19,6 +19,7 @@ from pathlib import Path
 from time import perf_counter
 from urllib.parse import urlparse
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from moodle_sitemap.auth import login_to_moodle
@@ -143,7 +144,13 @@ def crawl_site(
 
                 recorder.reset()
                 load_started = perf_counter()
-                response = session.page.goto(target_url, wait_until="domcontentloaded")
+                try:
+                    response = session.page.goto(target_url, wait_until="domcontentloaded")
+                except PlaywrightError as error:
+                    if is_download_navigation_error(error):
+                        visit_index.visited_targets.add(target_url)
+                        continue
+                    raise
                 try:
                     session.page.wait_for_load_state("networkidle", timeout=5_000)
                 except PlaywrightTimeoutError:
@@ -243,6 +250,12 @@ def format_progress_line(page: PageRecord, *, current_count: int, max_pages: int
         f"{page.page_type.value} "
         f"{page.normalized_url}"
     )
+
+
+def is_download_navigation_error(error: Exception) -> bool:
+    """Return true when Playwright rejected navigation because a download started."""
+
+    return "download is starting" in str(error).lower()
 
 
 def build_manifest_summary(
