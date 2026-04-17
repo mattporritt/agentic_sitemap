@@ -9,7 +9,7 @@ import tomllib
 
 from pydantic import ValidationError
 
-from moodle_sitemap.models import BrowserEngine, SmokeTestConfig
+from moodle_sitemap.models import BrowserEngine, SettleStrategy, SmokeTestConfig
 
 
 def normalize_browser_engine(value: str) -> BrowserEngine:
@@ -18,6 +18,16 @@ def normalize_browser_engine(value: str) -> BrowserEngine:
     except ValueError as exc:
         allowed = ", ".join(engine.value for engine in BrowserEngine)
         raise ValueError(f"Unsupported browser engine '{value}'. Expected one of: {allowed}.") from exc
+
+
+def normalize_settle_strategy(value: str) -> SettleStrategy:
+    try:
+        return SettleStrategy(value.strip().lower())
+    except ValueError as exc:
+        allowed = ", ".join(strategy.value for strategy in SettleStrategy)
+        raise ValueError(
+            f"Unsupported settle strategy '{value}'. Expected one of: {allowed}."
+        ) from exc
 
 
 def load_smoke_config(path: str | Path) -> SmokeTestConfig:
@@ -42,6 +52,9 @@ def load_smoke_config(path: str | Path) -> SmokeTestConfig:
             role_profile=run.get("role", "unlabeled"),
             browser_engine=normalize_browser_engine(browser.get("engine", BrowserEngine.CHROMIUM.value)),
             headless=browser.get("headless", True),
+            settle_strategy=normalize_settle_strategy(
+                run.get("settle_strategy", SettleStrategy.NETWORKIDLE.value)
+            ),
         )
     except KeyError as exc:
         raise ValueError(f"Missing required config value: {exc.args[0]}") from exc

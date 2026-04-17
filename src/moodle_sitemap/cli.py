@@ -12,12 +12,13 @@ import typer
 from moodle_sitemap.compare_runs import compare_runs
 from moodle_sitemap.crawl import CrawlConfig, crawl_site, format_progress_line
 from moodle_sitemap.discovery import run_discovery
-from moodle_sitemap.models import RuntimeLookupMode
+from moodle_sitemap.models import RuntimeLookupMode, SettleStrategy
 from moodle_sitemap.runtime_contract import (
     build_page_lookup_contract,
     build_path_lookup_contract,
     build_task_validation_contract,
 )
+from moodle_sitemap.settle_compare import compare_settle_strategies
 from moodle_sitemap.smoke import run_smoke_test
 from moodle_sitemap.task_validation import validate_tasks_for_run
 from moodle_sitemap.verify import run_verification
@@ -52,6 +53,10 @@ def crawl(
     role_profile: str = typer.Option("unlabeled", help="Role/profile label for this crawl, for example admin or student."),
     max_pages: int = typer.Option(200, min=1, help="Maximum pages to crawl."),
     headless: str = typer.Option("true", help="Whether to run the browser headless."),
+    settle_strategy: SettleStrategy = typer.Option(
+        SettleStrategy.NETWORKIDLE,
+        help="Post-navigation settle strategy.",
+    ),
 ) -> None:
     manifest = crawl_site(
         CrawlConfig(
@@ -62,6 +67,7 @@ def crawl(
             role_profile=role_profile,
             max_pages=max_pages,
             headless=parse_bool(headless),
+            settle_strategy=settle_strategy,
         ),
         progress_callback=emit_progress,
     )
@@ -125,12 +131,17 @@ def discover(
         Path("discovery-runs"),
         help="Root directory for timestamped discovery runs.",
     ),
+    settle_strategy: SettleStrategy = typer.Option(
+        SettleStrategy.NETWORKIDLE,
+        help="Post-navigation settle strategy.",
+    ),
 ) -> None:
     try:
         result = run_discovery(
             config_path=config,
             max_pages=max_pages,
             max_depth=max_depth,
+            settle_strategy=settle_strategy,
             base_dir=output_root,
             progress_callback=emit_progress,
         )
@@ -143,6 +154,49 @@ def discover(
     typer.echo(
         f"Discovery run wrote {result.summary_path} and crawled "
         f"{result.manifest.visited_pages} pages into {result.run_dir}"
+    )
+
+
+@app.command("compare-settle")
+def compare_settle_command(
+    config: Path = typer.Option(..., help="Path to the TOML config file used for discovery crawling."),
+    max_pages: int = typer.Option(200, min=1, help="Maximum pages to crawl during discovery."),
+    max_depth: int = typer.Option(4, min=1, help="Maximum link depth for discovery crawling."),
+    output_root: Path = typer.Option(
+        Path("settle-comparisons"),
+        help="Root directory for timestamped settle-strategy comparisons.",
+    ),
+    discovery_root: Path = typer.Option(
+        Path("discovery-runs"),
+        help="Root directory where the per-strategy discovery runs should be written.",
+    ),
+    strategies: list[SettleStrategy] = typer.Option(
+        [
+            SettleStrategy.NETWORKIDLE,
+            SettleStrategy.DOMCONTENTLOADED_SHORT_SETTLE,
+            SettleStrategy.ADAPTIVE,
+        ],
+        help="One or more settle strategies to run and compare.",
+    ),
+) -> None:
+    try:
+        result = compare_settle_strategies(
+            config_path=config,
+            strategies=strategies,
+            max_pages=max_pages,
+            max_depth=max_depth,
+            base_dir=output_root,
+            discovery_base_dir=discovery_root,
+            progress_callback=emit_progress,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except RuntimeError as exc:
+        typer.echo(f"Settle comparison failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Settle comparison wrote {result.json_path} and {result.markdown_path} into {result.output_dir}"
     )
 
 

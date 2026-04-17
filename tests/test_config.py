@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from moodle_sitemap.config import load_smoke_config, normalize_browser_engine
-from moodle_sitemap.models import BrowserEngine
+from moodle_sitemap.config import load_smoke_config, normalize_browser_engine, normalize_settle_strategy
+from moodle_sitemap.models import BrowserEngine, SettleStrategy
 
 
 def write_config(tmp_path: Path, contents: str) -> Path:
@@ -33,6 +33,7 @@ def test_load_smoke_config_reads_expected_values(tmp_path: Path) -> None:
 
         [run]
         role = "teacher"
+        settle_strategy = "adaptive"
         """,
     )
 
@@ -44,6 +45,7 @@ def test_load_smoke_config_reads_expected_values(tmp_path: Path) -> None:
     assert config.role_profile == "teacher"
     assert config.browser_engine == BrowserEngine.FIREFOX
     assert config.headless is False
+    assert config.settle_strategy == SettleStrategy.ADAPTIVE
 
 
 def test_load_smoke_config_defaults_browser_values(tmp_path: Path) -> None:
@@ -64,6 +66,7 @@ def test_load_smoke_config_defaults_browser_values(tmp_path: Path) -> None:
     assert config.role_profile == "unlabeled"
     assert config.browser_engine == BrowserEngine.CHROMIUM
     assert config.headless is True
+    assert config.settle_strategy == SettleStrategy.NETWORKIDLE
 
 
 def test_load_smoke_config_rejects_missing_values(tmp_path: Path) -> None:
@@ -87,3 +90,13 @@ def test_normalize_browser_engine_accepts_supported_values() -> None:
 def test_normalize_browser_engine_rejects_unknown_values() -> None:
     with pytest.raises(ValueError, match="Unsupported browser engine"):
         normalize_browser_engine("webkit")
+
+
+def test_normalize_settle_strategy_accepts_supported_values() -> None:
+    assert normalize_settle_strategy("networkidle") == SettleStrategy.NETWORKIDLE
+    assert normalize_settle_strategy("ADAPTIVE") == SettleStrategy.ADAPTIVE
+
+
+def test_normalize_settle_strategy_rejects_unknown_values() -> None:
+    with pytest.raises(ValueError, match="Unsupported settle strategy"):
+        normalize_settle_strategy("fast")

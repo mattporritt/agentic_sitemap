@@ -17,7 +17,7 @@ from pathlib import Path
 from statistics import median
 from urllib.parse import urlparse
 
-from moodle_sitemap.models import CrawlTimingSummary, PageTimingRecord
+from moodle_sitemap.models import CrawlTimingSummary, PageTimingRecord, SettleStrategy
 
 
 def route_family(url: str) -> str:
@@ -33,6 +33,7 @@ def route_family(url: str) -> str:
 def build_crawl_timing_summary(
     *,
     run_dir: str | Path,
+    settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE,
     page_timings: list[PageTimingRecord],
     total_run_duration_seconds: float,
     crawl_loop_duration_seconds: float,
@@ -103,6 +104,7 @@ def build_crawl_timing_summary(
 
     return CrawlTimingSummary(
         run_dir=str(run_dir),
+        settle_strategy=settle_strategy,
         total_run_duration_seconds=round(total_run_duration_seconds, 6),
         crawl_loop_duration_seconds=round(crawl_loop_duration_seconds, 6),
         page_count=len(page_timings),

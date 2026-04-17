@@ -15,3 +15,4 @@ headless = true
 
 [run]
 role = "admin"
+settle_strategy = "networkidle"

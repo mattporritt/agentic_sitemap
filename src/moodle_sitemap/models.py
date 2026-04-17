@@ -58,6 +58,13 @@ class BrowserEngine(StrEnum):
     FIREFOX = "firefox"
 
 
+class SettleStrategy(StrEnum):
+    NETWORKIDLE = "networkidle"
+    DOMCONTENTLOADED = "domcontentloaded"
+    DOMCONTENTLOADED_SHORT_SETTLE = "domcontentloaded_short_settle"
+    ADAPTIVE = "adaptive"
+
+
 class AffordanceElementType(StrEnum):
     LINK = "link"
     BUTTON = "button"
@@ -414,6 +421,7 @@ class PageTimingRecord(StrictModel):
 
 class CrawlTimingSummary(StrictModel):
     run_dir: str
+    settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE
     total_run_duration_seconds: float
     crawl_loop_duration_seconds: float
     page_count: int
@@ -439,6 +447,7 @@ class DiscoverySummary(StrictModel):
     site_url: HttpUrl
     role_profile: str = "unlabeled"
     run_dir: str
+    settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE
     total_pages: int
     unique_normalized_urls: int
     unknown_pages: int
@@ -483,6 +492,7 @@ class DiscoverySummary(StrictModel):
 class SiteManifest(StrictModel):
     site_url: HttpUrl
     role_profile: str = "unlabeled"
+    settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE
     origin: str
     crawl_started_at: datetime
     crawl_finished_at: datetime
@@ -499,6 +509,7 @@ class SmokeTestConfig(StrictModel):
     role_profile: str = "unlabeled"
     browser_engine: BrowserEngine = BrowserEngine.CHROMIUM
     headless: bool = True
+    settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE
 
 
 class SmokeTestRecord(StrictModel):
@@ -597,6 +608,40 @@ class TaskValidationSummary(StrictModel):
     partial_count: int = 0
     fail_count: int = 0
     results: list[TaskValidationTaskResult] = Field(default_factory=list)
+
+
+class SettleComparisonRun(StrictModel):
+    settle_strategy: SettleStrategy
+    run_dir: str
+    total_pages: int
+    unknown_pages: int
+    workflow_edge_count: int = 0
+    next_step_page_count: int = 0
+    intent_populated_pages: int = 0
+    crawl_duration_seconds: float
+    average_page_duration_seconds: float = 0.0
+    median_page_duration_seconds: float = 0.0
+    navigation_duration_seconds: float = 0.0
+    settle_duration_seconds: float = 0.0
+    extraction_duration_seconds: float = 0.0
+    write_duration_seconds: float = 0.0
+    page_type_counts: dict[str, int] = Field(default_factory=dict)
+    workflow_edge_weight_counts: dict[str, int] = Field(default_factory=dict)
+    workflow_edge_relevance_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class SettleComparisonSummary(StrictModel):
+    config_path: str
+    max_pages: int
+    max_depth: int | None = None
+    strategies: list[SettleComparisonRun] = Field(default_factory=list)
+    baseline_strategy: SettleStrategy | None = None
+    fastest_strategy: SettleStrategy | None = None
+    recommended_strategy: SettleStrategy | None = None
+    recommendation_reason: str | None = None
+    strategy_deltas: list[dict[str, object]] = Field(default_factory=list)
+    crawl_surface_deltas: list[dict[str, object]] = Field(default_factory=list)
+    quality_regressions: list[dict[str, object]] = Field(default_factory=list)
 
 
 class RuntimeLookupMode(StrEnum):

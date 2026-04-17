@@ -2,7 +2,7 @@
 # Licensed under the Moodle Community License v1.3.
 # See LICENSE.md in the repository root for full terms.
 # Commercial use requires a separate written agreement with Moodle.
-from moodle_sitemap.models import PageTimingRecord
+from moodle_sitemap.models import PageTimingRecord, SettleStrategy
 from moodle_sitemap.timing import build_crawl_timing_summary, route_family
 
 
@@ -14,6 +14,7 @@ def test_route_family_groups_first_two_path_segments() -> None:
 def test_build_crawl_timing_summary_aggregates_page_and_run_stages() -> None:
     summary = build_crawl_timing_summary(
         run_dir="discovery-runs/test",
+        settle_strategy=SettleStrategy.ADAPTIVE,
         page_timings=[
             PageTimingRecord(
                 page_id="0001-my",
@@ -47,6 +48,7 @@ def test_build_crawl_timing_summary_aggregates_page_and_run_stages() -> None:
     )
 
     assert summary.page_count == 2
+    assert summary.settle_strategy == SettleStrategy.ADAPTIVE
     assert summary.average_page_duration_seconds == 1.5
     assert summary.median_page_duration_seconds == 1.5
     assert summary.page_stage_totals["navigation_duration_seconds"] == 1.2

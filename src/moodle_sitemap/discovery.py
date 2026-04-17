@@ -21,7 +21,7 @@ from urllib.parse import parse_qsl, urlparse
 
 from moodle_sitemap.config import load_smoke_config
 from moodle_sitemap.crawl import CrawlConfig, ProgressCallback, crawl_site
-from moodle_sitemap.models import CrawlTimingSummary, DiscoverySummary, PageRecord, SiteManifest
+from moodle_sitemap.models import CrawlTimingSummary, DiscoverySummary, PageRecord, SettleStrategy, SiteManifest
 
 
 @dataclass(slots=True)
@@ -49,6 +49,7 @@ def run_discovery(
     config_path: str | Path,
     max_pages: int = 200,
     max_depth: int | None = 4,
+    settle_strategy: SettleStrategy | None = None,
     base_dir: str | Path = "discovery-runs",
     baseline_manifest_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
@@ -56,6 +57,7 @@ def run_discovery(
     """Run a broader bounded crawl and write discovery summary artifacts."""
 
     config = load_smoke_config(config_path)
+    selected_settle_strategy = settle_strategy or config.settle_strategy
     run_dir = create_discovery_run_dir(base_dir)
     manifest = crawl_site(
         CrawlConfig(
@@ -68,6 +70,7 @@ def run_discovery(
             max_depth=max_depth,
             headless=config.headless,
             browser_engine=config.browser_engine,
+            settle_strategy=selected_settle_strategy,
         ),
         progress_callback=progress_callback,
     )
@@ -227,6 +230,7 @@ def build_discovery_summary(
         site_url=manifest.site_url,
         role_profile=manifest.role_profile,
         run_dir=str(run_dir),
+        settle_strategy=manifest.settle_strategy,
         total_pages=manifest.visited_pages,
         unique_normalized_urls=len({page.normalized_url for page in pages}),
         unknown_pages=manifest.summary.unknown_pages,

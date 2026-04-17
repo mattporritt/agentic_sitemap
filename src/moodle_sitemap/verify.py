@@ -47,6 +47,7 @@ def run_verification(
             max_pages=max_pages,
             headless=config.headless,
             browser_engine=config.browser_engine,
+            settle_strategy=config.settle_strategy,
         ),
         progress_callback=progress_callback,
     )

@@ -20,7 +20,6 @@ from time import perf_counter
 from urllib.parse import urlparse
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from moodle_sitemap.auth import login_to_moodle
 from moodle_sitemap.browser import open_browser
@@ -41,9 +40,11 @@ from moodle_sitemap.models import (
     PageRecord,
     PageTimingRecord,
     PageType,
+    SettleStrategy,
     SiteManifest,
 )
 from moodle_sitemap.safety import summarize_page_safety
+from moodle_sitemap.settle import apply_settle_strategy
 from moodle_sitemap.storage.json_store import JsonStore
 from moodle_sitemap.timing import build_crawl_timing_summary, route_family
 from moodle_sitemap.workflow import derive_workflow_graph
@@ -62,6 +63,7 @@ class CrawlConfig:
     max_depth: int | None = None
     headless: bool = True
     browser_engine: BrowserEngine = BrowserEngine.CHROMIUM
+    settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE
 
 
 ProgressCallback = Callable[[PageRecord, int, int], None]
@@ -165,10 +167,7 @@ def crawl_site(
                     raise
                 navigation_duration_seconds = perf_counter() - navigation_started
                 settle_started = perf_counter()
-                try:
-                    session.page.wait_for_load_state("networkidle", timeout=5_000)
-                except PlaywrightTimeoutError:
-                    pass
+                apply_settle_strategy(session.page, config.settle_strategy)
                 settle_duration_seconds = perf_counter() - settle_started
                 load_duration_seconds = navigation_duration_seconds + settle_duration_seconds
 
@@ -259,6 +258,7 @@ def crawl_site(
     manifest = SiteManifest(
         site_url=start_url,
         role_profile=config.role_profile,
+        settle_strategy=config.settle_strategy,
         origin=origin,
         crawl_started_at=crawl_started_at,
         crawl_finished_at=crawl_finished_at,
@@ -281,6 +281,7 @@ def crawl_site(
     timing_summary_started = perf_counter()
     timing_summary = build_crawl_timing_summary(
         run_dir=config.output_dir,
+        settle_strategy=config.settle_strategy,
         page_timings=page_timings,
         total_run_duration_seconds=perf_counter() - run_started,
         crawl_loop_duration_seconds=crawl_loop_duration_seconds,

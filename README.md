@@ -204,6 +204,7 @@ headless = true
 
 [run]
 role = "admin"
+settle_strategy = "networkidle"
 ```
 
 Run the smoke test:
@@ -273,6 +274,16 @@ Run a broader but still controlled discovery crawl:
 moodle-sitemap discover --config ./config.toml --max-pages 200 --max-depth 4
 ```
 
+To test a lighter settle mode without changing the config file, override it on the CLI:
+
+```bash
+moodle-sitemap discover \
+  --config ./config.toml \
+  --max-pages 200 \
+  --max-depth 4 \
+  --settle-strategy adaptive
+```
+
 What this does:
 
 - runs a larger authenticated crawl budget than verification mode
@@ -316,6 +327,24 @@ The discovery summary is meant to highlight what a larger crawl surfaced, includ
 - slowest pages
 - crawl timing totals and slowest route families
 - remaining unknown or weakly classified pages
+
+Available settle strategies are:
+
+- `networkidle`: current conservative baseline
+- `domcontentloaded`: no extra post-navigation wait
+- `domcontentloaded_short_settle`: DOMContentLoaded plus a short fixed delay
+- `adaptive`: body/main readiness checks plus a short settle delay
+
+For side-by-side measurement, run:
+
+```bash
+moodle-sitemap compare-settle \
+  --config ./config.toml \
+  --max-pages 40 \
+  --max-depth 4
+```
+
+This writes one timestamped comparison under `settle-comparisons/` plus one normal discovery run per strategy under `discovery-runs/`. The comparison artifact includes timing deltas, page-count and unknown-count changes, workflow-edge changes, crawl-surface overlap summaries, and a recommendation on whether a lighter strategy looked safe enough to adopt.
 
 ### Role-specific validation
 

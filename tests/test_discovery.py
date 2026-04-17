@@ -13,7 +13,14 @@ from moodle_sitemap.discovery import (
     route_signature,
     load_optional_manifest,
 )
-from moodle_sitemap.models import CrawlTimingSummary, PageAffordances, PageRecord, PageType, SiteManifest
+from moodle_sitemap.models import (
+    CrawlTimingSummary,
+    PageAffordances,
+    PageRecord,
+    PageType,
+    SettleStrategy,
+    SiteManifest,
+)
 
 
 def make_page(
@@ -71,6 +78,7 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     ]
     manifest = SiteManifest(
         site_url="https://example.com",
+        settle_strategy=SettleStrategy.ADAPTIVE,
         origin="https://example.com",
         crawl_started_at=started,
         crawl_finished_at=finished,
@@ -143,6 +151,7 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     (run_dir / "timing-summary.json").write_text(
         CrawlTimingSummary(
             run_dir=str(run_dir),
+            settle_strategy=SettleStrategy.ADAPTIVE,
             total_run_duration_seconds=61.0,
             crawl_loop_duration_seconds=59.5,
             page_count=3,
@@ -190,6 +199,7 @@ def test_build_discovery_summary_collects_counts_and_candidates(tmp_path: Path) 
     summary = build_discovery_summary(manifest, run_dir=run_dir, baseline_manifest=baseline)
 
     assert summary.total_pages == 3
+    assert summary.settle_strategy == SettleStrategy.ADAPTIVE
     assert summary.unique_normalized_urls == 3
     assert summary.unknown_pages == 1
     assert summary.max_depth_reached == 3
