@@ -274,6 +274,8 @@ Run a broader but still controlled discovery crawl:
 moodle-sitemap discover --config ./config.toml --max-pages 200 --max-depth 4
 ```
 
+Broad discovery now defaults to the `adaptive` settle strategy. If you want the slower conservative reference mode for debugging or comparison, set `--settle-strategy networkidle` explicitly.
+
 To test a lighter settle mode without changing the config file, override it on the CLI:
 
 ```bash

@@ -132,8 +132,8 @@ def discover(
         help="Root directory for timestamped discovery runs.",
     ),
     settle_strategy: SettleStrategy = typer.Option(
-        SettleStrategy.NETWORKIDLE,
-        help="Post-navigation settle strategy.",
+        SettleStrategy.ADAPTIVE,
+        help="Post-navigation settle strategy. Discovery defaults to adaptive; use networkidle for conservative reference runs.",
     ),
 ) -> None:
     try:

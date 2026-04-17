@@ -57,7 +57,7 @@ def run_discovery(
     """Run a broader bounded crawl and write discovery summary artifacts."""
 
     config = load_smoke_config(config_path)
-    selected_settle_strategy = settle_strategy or config.settle_strategy
+    selected_settle_strategy = settle_strategy or SettleStrategy.ADAPTIVE
     run_dir = create_discovery_run_dir(base_dir)
     manifest = crawl_site(
         CrawlConfig(
