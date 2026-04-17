@@ -135,6 +135,14 @@ def test_classify_admin_tool_page() -> None:
     assert page_type == PageType.ADMIN_TOOL_PAGE
 
 
+def test_classify_admin_task_page() -> None:
+    page_type = classify_page(
+        "https://example.com/admin/tool/task/scheduledtasks.php",
+        make_features(body_id="page-admin-tool-task-scheduledtasks"),
+    )
+    assert page_type == PageType.ADMIN_TASK_PAGE
+
+
 def test_classify_user_profile() -> None:
     page_type = classify_page(
         "https://example.com/user/profile.php?id=3",

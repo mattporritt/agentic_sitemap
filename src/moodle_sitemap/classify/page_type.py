@@ -112,6 +112,9 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
     if path == "/admin/settings.php" or body_id == "page-admin-setting":
         return PageType.ADMIN_SETTING_PAGE
 
+    if path.startswith("/admin/tool/task/") or body_id.startswith("page-admin-tool-task"):
+        return PageType.ADMIN_TASK_PAGE
+
     if path.startswith("/admin/tool/") or "tool" in breadcrumbs and path.startswith("/admin/"):
         return PageType.ADMIN_TOOL_PAGE
 
@@ -122,6 +125,8 @@ def classify_page(url: str, features: PageFeatures) -> PageType:
             return PageType.ADMIN_CATEGORY
         if "settings.php" in path:
             return PageType.ADMIN_SETTING_PAGE
+        if "/tool/task/" in path:
+            return PageType.ADMIN_TASK_PAGE
         if "/tool/" in path:
             return PageType.ADMIN_TOOL_PAGE
         return PageType.ADMIN_SETTING_PAGE

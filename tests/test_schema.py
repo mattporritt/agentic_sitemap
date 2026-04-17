@@ -156,6 +156,7 @@ def test_build_manifest_summary_counts_page_types() -> None:
     assert summary.page_type_counts["admin_category"] == 0
     assert summary.page_type_counts["admin_setting_page"] == 0
     assert summary.page_type_counts["admin_tool_page"] == 0
+    assert summary.page_type_counts["admin_task_page"] == 0
     assert summary.page_type_counts["course_switch_role"] == 0
     assert summary.page_type_counts["contact_site_support"] == 0
     assert summary.page_type_counts["messages"] == 0

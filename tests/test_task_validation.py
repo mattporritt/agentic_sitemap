@@ -292,3 +292,98 @@ def test_evaluate_task_uses_background_cluster_path_for_calendar_surface() -> No
     assert result.candidate_path_page_types == ["dashboard", "calendar"]
     assert result.best_path_confidence == 45
     assert result.first_hop_quality >= 30
+
+
+def test_evaluate_task_passes_for_scheduled_tasks_from_dashboard_via_admin_search() -> None:
+    dashboard = make_page(
+        "0001-my",
+        "https://example.com/my",
+        page_type=PageType.DASHBOARD,
+        next_steps=[
+            NextStepHint(
+                page_id="0002-admin-search",
+                target_url="https://example.com/admin/search.php",
+                target_page_type=PageType.ADMIN_SEARCH,
+                edge_type=WorkflowEdgeType.NAVIGATION,
+                edge_weight=EdgeWeight.MEDIUM,
+                edge_relevance=EdgeRelevance.SUPPORT,
+                label="Site administration",
+                likely_intent=LikelyIntent.NAVIGATE,
+            )
+        ],
+    )
+    admin_search = make_page(
+        "0002-admin-search",
+        "https://example.com/admin/search.php",
+        page_type=PageType.ADMIN_SEARCH,
+        next_steps=[
+            NextStepHint(
+                page_id="0003-scheduled-tasks",
+                target_url="https://example.com/admin/tool/task/scheduledtasks.php",
+                target_page_type=PageType.ADMIN_TASK_PAGE,
+                edge_type=WorkflowEdgeType.ADMIN,
+                edge_weight=EdgeWeight.HIGH,
+                edge_relevance=EdgeRelevance.TASK,
+                label="Scheduled tasks",
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+    )
+    scheduled_tasks = make_page(
+        "0003-scheduled-tasks",
+        "https://example.com/admin/tool/task/scheduledtasks.php",
+        page_type=PageType.ADMIN_TASK_PAGE,
+        actions=[
+            ActionAffordance(
+                label="Run now",
+                url="https://example.com/admin/tool/task/scheduledtasks.php?action=run",
+                element_type=AffordanceElementType.LINK,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+    )
+    manifest = make_manifest("admin", [dashboard, admin_search, scheduled_tasks])
+    graph = WorkflowGraph(
+        role_profile="admin",
+        total_edges=2,
+        edges=[
+            WorkflowEdge(
+                from_page_id="0001-my",
+                to_page_id="0002-admin-search",
+                target_url="https://example.com/admin/search.php",
+                target_page_type=PageType.ADMIN_SEARCH,
+                edge_type=WorkflowEdgeType.NAVIGATION,
+                edge_weight=EdgeWeight.MEDIUM,
+                edge_relevance=EdgeRelevance.SUPPORT,
+                source_affordance_label="Site administration",
+                confidence=0.8,
+            ),
+            WorkflowEdge(
+                from_page_id="0002-admin-search",
+                to_page_id="0003-scheduled-tasks",
+                target_url="https://example.com/admin/tool/task/scheduledtasks.php",
+                target_page_type=PageType.ADMIN_TASK_PAGE,
+                edge_type=WorkflowEdgeType.ADMIN,
+                edge_weight=EdgeWeight.HIGH,
+                edge_relevance=EdgeRelevance.TASK,
+                source_affordance_label="Scheduled tasks",
+                confidence=0.92,
+            ),
+        ],
+    )
+    task = TaskSpec(
+        task_id="admin-scheduled-tasks",
+        role_profile="admin",
+        starting_page_type=PageType.DASHBOARD,
+        target_page_type=PageType.ADMIN_TASK_PAGE,
+        target_url_contains=["admin/tool/task/scheduledtasks.php"],
+        expected_intermediate_page_types=[PageType.ADMIN_SEARCH],
+        required_affordance_intents=[LikelyIntent.CONFIGURE],
+        success_hint="Reach the scheduled tasks admin page from the admin dashboard.",
+    )
+
+    result = evaluate_task(task=task, manifest=manifest, workflow_graph=graph)
+
+    assert result.status == TaskValidationStatus.PASS
+    assert result.candidate_path_page_types == ["dashboard", "admin_search", "admin_task_page"]
+    assert result.key_affordances == ["Run now"]

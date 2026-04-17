@@ -62,6 +62,7 @@ Initial page types:
 - `admin_category`
 - `admin_setting_page`
 - `admin_tool_page`
+- `admin_task_page`
 - `contact_site_support`
 - `user_profile`
 - `user_profile_edit`
@@ -721,6 +722,7 @@ Each workflow edge also carries a separate weighting layer:
 The weighting is intentionally conservative:
 
 - specific admin search/category to setting/tool pages should usually rank above broad admin hubs
+- specific admin task-management pages such as scheduled, adhoc, or running tasks should rank above generic admin spill when they are surfaced
 - course and preference configuration paths should rank above generic site navigation
 - repeated calendar variants, discovered-only admin links, and generic nav clusters should stay lower-value
 

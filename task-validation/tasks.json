@@ -38,6 +38,15 @@
       "success_hint": "Reach an AI-related admin configuration page."
     },
     {
+      "task_id": "admin-scheduled-tasks",
+      "role_profile": "admin",
+      "starting_page_type": "dashboard",
+      "target_page_type": "admin_task_page",
+      "target_url_contains": ["admin/tool/task/scheduledtasks.php"],
+      "expected_intermediate_page_types": ["admin_search"],
+      "success_hint": "Reach the scheduled tasks admin page from the admin dashboard."
+    },
+    {
       "task_id": "teacher-profile-edit-from-dashboard",
       "role_profile": "teacher",
       "starting_page_type": "dashboard",

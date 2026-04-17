@@ -1035,6 +1035,7 @@ def refine_task_summary_for_page_type(
         PageType.ADMIN_CATEGORY: LikelyIntent.CONFIGURE,
         PageType.ADMIN_SETTING_PAGE: LikelyIntent.CONFIGURE,
         PageType.ADMIN_TOOL_PAGE: LikelyIntent.CONFIGURE,
+        PageType.ADMIN_TASK_PAGE: LikelyIntent.CONFIGURE,
         PageType.USER_PREFERENCES: LikelyIntent.CONFIGURE,
         PageType.MESSAGE_PREFERENCES: LikelyIntent.CONFIGURE,
         PageType.MESSAGES: LikelyIntent.MESSAGE,

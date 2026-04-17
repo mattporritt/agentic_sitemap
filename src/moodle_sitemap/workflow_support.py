@@ -185,6 +185,7 @@ def infer_edge_type(
         PageType.ADMIN_CATEGORY,
         PageType.ADMIN_SETTING_PAGE,
         PageType.ADMIN_TOOL_PAGE,
+        PageType.ADMIN_TASK_PAGE,
     }:
         return WorkflowEdgeType.SETTINGS, 0.75, "course-settings-like-link"
     if source_type == PageType.USER_PREFERENCES and target_type == PageType.MESSAGE_PREFERENCES:
@@ -195,11 +196,13 @@ def infer_edge_type(
         PageType.ADMIN_CATEGORY,
         PageType.ADMIN_SETTING_PAGE,
         PageType.ADMIN_TOOL_PAGE,
+        PageType.ADMIN_TASK_PAGE,
     }:
         return WorkflowEdgeType.ADMIN, 0.92, "admin-search-result"
     if source_type == PageType.ADMIN_CATEGORY and target_type in {
         PageType.ADMIN_SETTING_PAGE,
         PageType.ADMIN_TOOL_PAGE,
+        PageType.ADMIN_TASK_PAGE,
     }:
         return WorkflowEdgeType.ADMIN, 0.9, "admin-category-drilldown"
     if source_type in {
@@ -207,11 +210,13 @@ def infer_edge_type(
         PageType.ADMIN_CATEGORY,
         PageType.ADMIN_SETTING_PAGE,
         PageType.ADMIN_TOOL_PAGE,
+        PageType.ADMIN_TASK_PAGE,
     } and target_type in {
         PageType.ADMIN_SEARCH,
         PageType.ADMIN_CATEGORY,
         PageType.ADMIN_SETTING_PAGE,
         PageType.ADMIN_TOOL_PAGE,
+        PageType.ADMIN_TASK_PAGE,
     }:
         return WorkflowEdgeType.ADMIN, 0.85, "admin-to-admin-navigation"
     if kind == "tab":
@@ -280,6 +285,7 @@ def infer_edge_weight(
             PageType.ADMIN_CATEGORY,
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
             PageType.USER_PREFERENCES,
         }:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "settings-progression"
@@ -288,13 +294,17 @@ def infer_edge_weight(
         if source_page.page_type == PageType.ADMIN_SEARCH and target_page.page_type in {
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-search-to-specific-page"
         if source_page.page_type == PageType.ADMIN_CATEGORY and target_page.page_type in {
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-category-to-specific-page"
+        if target_page.page_type == PageType.ADMIN_TASK_PAGE:
+            return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-task-management-page"
         if candidate.importance == ImportanceLevel.PRIMARY and target_page.page_type != PageType.ADMIN_CATEGORY:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-primary-drilldown"
         if target_page.page_type == PageType.ADMIN_CATEGORY:
@@ -308,7 +318,10 @@ def infer_edge_weight(
             PageType.ADMIN_CATEGORY,
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
+            if target_page.page_type == PageType.ADMIN_TASK_PAGE:
+                return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "task-admin-discovered-link"
             return EdgeWeight.LOW, EdgeRelevance.CONTEXTUAL, "admin-discovered-link"
         return EdgeWeight.LOW, EdgeRelevance.CONTEXTUAL, "discovered-link"
     if candidate.likely_intent in {
@@ -326,11 +339,13 @@ def infer_edge_weight(
         if source_page.page_type == PageType.ADMIN_SEARCH and target_page.page_type in {
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-search-navigation"
         if source_page.page_type == PageType.ADMIN_CATEGORY and target_page.page_type in {
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
             return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-category-navigation"
         if candidate.kind == "tab":
@@ -340,12 +355,16 @@ def infer_edge_weight(
             PageType.ADMIN_CATEGORY,
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         } and target_page.page_type in {
             PageType.ADMIN_SEARCH,
             PageType.ADMIN_CATEGORY,
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
+            if target_page.page_type == PageType.ADMIN_TASK_PAGE:
+                return EdgeWeight.HIGH, EdgeRelevance.TASK, "admin-task-navigation"
             return EdgeWeight.LOW, EdgeRelevance.NAVIGATION, "generic-admin-navigation"
         if candidate.importance == ImportanceLevel.PRIMARY:
             return EdgeWeight.MEDIUM, EdgeRelevance.SUPPORT, "primary-navigation"
@@ -462,6 +481,7 @@ def compressible_family_for_edge(source_page: PageRecord | None, edge: WorkflowE
         PageType.ADMIN_CATEGORY,
         PageType.ADMIN_SETTING_PAGE,
         PageType.ADMIN_TOOL_PAGE,
+        PageType.ADMIN_TASK_PAGE,
     } and path.startswith("/admin/"):
         return "/admin/background"
     return None
@@ -482,6 +502,7 @@ def should_compress_family(
             PageType.ADMIN_CATEGORY,
             PageType.ADMIN_SETTING_PAGE,
             PageType.ADMIN_TOOL_PAGE,
+            PageType.ADMIN_TASK_PAGE,
         }:
             return len(family_edges) >= 1
         return len(family_edges) >= 2

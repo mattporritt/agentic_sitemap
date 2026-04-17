@@ -66,6 +66,14 @@ DOWNLOAD_FILE_EXTENSIONS = {
     ".mp4",
 }
 
+ADMIN_TASK_PATH_PREFIX = "/admin/tool/task/"
+ADMIN_TASK_PRIORITY_SEGMENTS = (
+    "/scheduledtasks.php",
+    "/schedule_task.php",
+    "/adhoctasks.php",
+    "/runningtasks.php",
+)
+
 
 def normalize_url(url: str, *, base_url: str | None = None) -> str:
     absolute = urljoin(base_url, url) if base_url else url
@@ -146,6 +154,29 @@ def filter_discovered_links(
         seen.add(normalized)
         filtered.append(normalized)
     return filtered
+
+
+def prioritize_discovered_links(links: Iterable[str]) -> list[str]:
+    """Promote important admin task-management routes within an existing link set."""
+
+    return sorted(links, key=_discovered_link_priority_key)
+
+
+def _discovered_link_priority_key(url: str) -> tuple[int, int, str]:
+    parsed = urlparse(url)
+    path = parsed.path.lower()
+    if path.startswith(ADMIN_TASK_PATH_PREFIX):
+        for index, suffix in enumerate(ADMIN_TASK_PRIORITY_SEGMENTS):
+            if path.endswith(suffix):
+                return (0, index, url)
+        return (0, len(ADMIN_TASK_PRIORITY_SEGMENTS), url)
+    if path.startswith("/admin/search.php"):
+        return (1, 0, url)
+    if path.startswith("/admin/category.php"):
+        return (2, 0, url)
+    if path.startswith("/admin/settings.php"):
+        return (3, 0, url)
+    return (4, 0, url)
 
 
 def make_page_id(index: int, url: str) -> str:

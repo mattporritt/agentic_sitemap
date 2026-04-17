@@ -35,6 +35,7 @@ class PageType(StrEnum):
     ADMIN_CATEGORY = "admin_category"
     ADMIN_SETTING_PAGE = "admin_setting_page"
     ADMIN_TOOL_PAGE = "admin_tool_page"
+    ADMIN_TASK_PAGE = "admin_task_page"
     CONTACT_SITE_SUPPORT = "contact_site_support"
     USER_PROFILE = "user_profile"
     USER_PROFILE_EDIT = "user_profile_edit"

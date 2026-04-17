@@ -273,6 +273,36 @@ def test_admin_search_prefers_specific_setting_page_over_broad_admin_category() 
     assert admin_search.next_steps[0].edge_relevance == EdgeRelevance.TASK
 
 
+def test_admin_search_promotes_scheduled_tasks_as_task_destination() -> None:
+    admin_search = make_page(
+        "0001-admin-search",
+        "https://example.com/admin/search.php",
+        page_type=PageType.ADMIN_SEARCH,
+        navigation=[
+            NavigationItem(
+                label="Scheduled tasks",
+                url="https://example.com/admin/tool/task/scheduledtasks.php",
+                current=False,
+                importance_level=ImportanceLevel.SECONDARY,
+                likely_intent=LikelyIntent.CONFIGURE,
+            )
+        ],
+        task_summary=PageTaskSummary(primary_page_intent=LikelyIntent.SEARCH, task_relevance_score=90),
+    )
+    scheduled_tasks = make_page(
+        "0002-scheduled-tasks",
+        "https://example.com/admin/tool/task/scheduledtasks.php",
+        page_type=PageType.ADMIN_TASK_PAGE,
+    )
+
+    graph = derive_workflow_graph([admin_search, scheduled_tasks])
+
+    assert graph.edges[0].edge_type == WorkflowEdgeType.ADMIN
+    assert graph.edges[0].edge_weight == EdgeWeight.HIGH
+    assert graph.edges[0].edge_relevance == EdgeRelevance.TASK
+    assert admin_search.next_steps[0].page_id == "0002-scheduled-tasks"
+
+
 def test_stronger_explicit_edge_prunes_weaker_discovered_link_duplicate() -> None:
     source = make_page(
         "0001-admin-search",

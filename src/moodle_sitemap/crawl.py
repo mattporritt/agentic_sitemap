@@ -29,6 +29,7 @@ from moodle_sitemap.discover import (
     filter_discovered_links,
     make_page_id,
     normalize_url,
+    prioritize_discovered_links,
     same_origin,
 )
 from moodle_sitemap.extract.dom import extract_anchor_hrefs, extract_page_features, refine_task_summary_for_page_type
@@ -239,7 +240,7 @@ def crawl_site(
                 if config.max_depth is not None and depth >= config.max_depth:
                     continue
 
-                for link in discovered_links:
+                for link in prioritize_discovered_links(discovered_links):
                     if len(visit_index.visited_normalized) + len(queue) >= config.max_pages:
                         break
                     if not visit_index.mark_queued(link):
