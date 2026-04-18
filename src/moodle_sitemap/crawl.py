@@ -169,6 +169,9 @@ def crawl_site(
                     if is_navigation_timeout_error(error):
                         visit_index.visited_targets.add(target_url)
                         continue
+                    if is_transient_navigation_error(error):
+                        visit_index.visited_targets.add(target_url)
+                        continue
                     raise
                 navigation_duration_seconds = perf_counter() - navigation_started
                 settle_started = perf_counter()
@@ -349,6 +352,18 @@ def is_navigation_timeout_error(error: Exception) -> bool:
     """Return true when Playwright timed out before DOMContentLoaded."""
 
     return "page.goto" in str(error).lower() and "timeout" in str(error).lower()
+
+
+def is_transient_navigation_error(error: Exception) -> bool:
+    """Return true for browser/network navigation failures worth skipping.
+
+    These errors usually reflect a stressed browser session or a flaky page,
+    not a repository bug in extraction or classification. Skipping the page is
+    safer than aborting a long-running crawl.
+    """
+
+    message = str(error).lower()
+    return "page.goto" in message and "err_network_io_suspended" in message
 
 
 def build_manifest_summary(

@@ -6,6 +6,7 @@ from moodle_sitemap.crawl import (
     CrawlVisitIndex,
     format_progress_line,
     is_download_navigation_error,
+    is_transient_navigation_error,
     is_navigation_timeout_error,
 )
 from moodle_sitemap.models import PageRecord, PageType
@@ -63,3 +64,10 @@ def test_is_download_navigation_error_matches_playwright_download_message() -> N
 def test_is_navigation_timeout_error_matches_playwright_timeout_message() -> None:
     assert is_navigation_timeout_error(Exception("Page.goto: Timeout 30000ms exceeded"))
     assert not is_navigation_timeout_error(Exception("Page.goto: Download is starting"))
+
+
+def test_is_transient_navigation_error_matches_network_io_suspended() -> None:
+    assert is_transient_navigation_error(
+        Exception("Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://example.com/admin/plugins.php")
+    )
+    assert not is_transient_navigation_error(Exception("Page.goto: Timeout 30000ms exceeded"))
