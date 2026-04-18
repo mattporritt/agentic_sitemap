@@ -70,6 +70,9 @@ class CrawlConfig:
 
 ProgressCallback = Callable[[PageRecord, int, int], None]
 
+MAX_DEFERRED_RETRY_ATTEMPTS = 1
+MAX_DEFERRED_RETRY_TARGETS = 100
+
 
 @dataclass
 class CrawlVisitIndex:
@@ -111,6 +114,29 @@ class CrawlVisitIndex:
         return True
 
 
+@dataclass(slots=True)
+class DeferredRetryState:
+    """Tracks bounded end-of-run retries for transient navigation failures."""
+
+    queue: deque[tuple[str, str | None, int]] = field(default_factory=deque)
+    attempts_by_target: dict[str, int] = field(default_factory=dict)
+
+    def should_defer(self, target_url: str, error: Exception) -> bool:
+        """Return true when a target deserves one bounded retry later in the run."""
+
+        if not is_retryable_navigation_error(error):
+            return False
+        if self.attempts_by_target.get(target_url, 0) >= MAX_DEFERRED_RETRY_ATTEMPTS:
+            return False
+        return len(self.queue) < MAX_DEFERRED_RETRY_TARGETS
+
+    def enqueue(self, target_url: str, referrer: str | None, depth: int) -> None:
+        """Queue a target for one deferred retry after fresh pages are exhausted."""
+
+        self.attempts_by_target[target_url] = self.attempts_by_target.get(target_url, 0) + 1
+        self.queue.append((target_url, referrer, depth))
+
+
 def crawl_site(
     config: CrawlConfig,
     *,
@@ -135,6 +161,7 @@ def crawl_site(
 
     visit_index = CrawlVisitIndex()
     queue: deque[tuple[str, str | None, int]] = deque([(start_url, None, 0)])
+    deferred_retry_state = DeferredRetryState()
     visit_index.mark_queued(start_url)
     page_records: list[PageRecord] = []
     page_timings: list[PageTimingRecord] = []
@@ -151,9 +178,12 @@ def crawl_site(
 
         try:
             crawl_loop_started = perf_counter()
-            while queue and len(page_records) < config.max_pages:
-                target_url, referrer, depth = queue.popleft()
-                visit_index.mark_dequeued(target_url)
+            while (queue or deferred_retry_state.queue) and len(page_records) < config.max_pages:
+                if queue:
+                    target_url, referrer, depth = queue.popleft()
+                    visit_index.mark_dequeued(target_url)
+                else:
+                    target_url, referrer, depth = deferred_retry_state.queue.popleft()
                 if visit_index.should_skip_target(target_url):
                     continue
 
@@ -166,10 +196,10 @@ def crawl_site(
                     if is_download_navigation_error(error):
                         visit_index.visited_targets.add(target_url)
                         continue
-                    if is_navigation_timeout_error(error):
-                        visit_index.visited_targets.add(target_url)
+                    if deferred_retry_state.should_defer(target_url, error):
+                        deferred_retry_state.enqueue(target_url, referrer, depth)
                         continue
-                    if is_transient_navigation_error(error):
+                    if is_retryable_navigation_error(error):
                         visit_index.visited_targets.add(target_url)
                         continue
                     raise
@@ -364,6 +394,12 @@ def is_transient_navigation_error(error: Exception) -> bool:
 
     message = str(error).lower()
     return "page.goto" in message and "err_network_io_suspended" in message
+
+
+def is_retryable_navigation_error(error: Exception) -> bool:
+    """Return true for transient navigation failures worth one deferred retry."""
+
+    return is_navigation_timeout_error(error) or is_transient_navigation_error(error)
 
 
 def build_manifest_summary(

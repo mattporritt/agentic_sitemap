@@ -4,10 +4,12 @@
 # Commercial use requires a separate written agreement with Moodle.
 from moodle_sitemap.crawl import (
     CrawlVisitIndex,
+    DeferredRetryState,
     format_progress_line,
     is_download_navigation_error,
-    is_transient_navigation_error,
     is_navigation_timeout_error,
+    is_retryable_navigation_error,
+    is_transient_navigation_error,
 )
 from moodle_sitemap.models import PageRecord, PageType
 
@@ -71,3 +73,31 @@ def test_is_transient_navigation_error_matches_network_io_suspended() -> None:
         Exception("Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://example.com/admin/plugins.php")
     )
     assert not is_transient_navigation_error(Exception("Page.goto: Timeout 30000ms exceeded"))
+
+
+def test_is_retryable_navigation_error_matches_timeout_and_transient_failures() -> None:
+    assert is_retryable_navigation_error(Exception("Page.goto: Timeout 30000ms exceeded"))
+    assert is_retryable_navigation_error(
+        Exception("Page.goto: net::ERR_NETWORK_IO_SUSPENDED at https://example.com/admin/plugins.php")
+    )
+    assert not is_retryable_navigation_error(Exception("Page.goto: Download is starting"))
+
+
+def test_deferred_retry_state_allows_one_retry_for_transient_navigation_errors() -> None:
+    state = DeferredRetryState()
+    target_url = "https://example.com/admin/plugins.php"
+    error = Exception("Page.goto: Timeout 30000ms exceeded")
+
+    assert state.should_defer(target_url, error) is True
+    state.enqueue(target_url, None, 2)
+    assert list(state.queue) == [(target_url, None, 2)]
+    assert state.should_defer(target_url, error) is False
+
+
+def test_deferred_retry_state_rejects_non_retryable_navigation_errors() -> None:
+    state = DeferredRetryState()
+
+    assert state.should_defer(
+        "https://example.com/admin/tool/uploaduser/example.csv",
+        Exception("Page.goto: Download is starting"),
+    ) is False
