@@ -20,6 +20,7 @@ from time import perf_counter
 from urllib.parse import urlparse
 
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from moodle_sitemap.auth import login_to_moodle
 from moodle_sitemap.browser import open_browser
@@ -161,8 +162,11 @@ def crawl_site(
                 navigation_started = perf_counter()
                 try:
                     response = session.page.goto(target_url, wait_until="domcontentloaded")
-                except PlaywrightError as error:
+                except (PlaywrightError, PlaywrightTimeoutError) as error:
                     if is_download_navigation_error(error):
+                        visit_index.visited_targets.add(target_url)
+                        continue
+                    if is_navigation_timeout_error(error):
                         visit_index.visited_targets.add(target_url)
                         continue
                     raise
@@ -339,6 +343,12 @@ def is_download_navigation_error(error: Exception) -> bool:
     """Return true when Playwright rejected navigation because a download started."""
 
     return "download is starting" in str(error).lower()
+
+
+def is_navigation_timeout_error(error: Exception) -> bool:
+    """Return true when Playwright timed out before DOMContentLoaded."""
+
+    return "page.goto" in str(error).lower() and "timeout" in str(error).lower()
 
 
 def build_manifest_summary(
