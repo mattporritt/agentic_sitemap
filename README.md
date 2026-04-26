@@ -261,10 +261,10 @@ verification-runs/
 
 This is intended for regression checking over time, especially for canonical URL handling, footer parsing, and extraction behavior.
 
-Verification and discovery crawls print lightweight progress lines in the CLI as pages are captured, for example:
+Verification and discovery crawls print lightweight progress lines in the CLI as pages are captured, including the time taken to index each page:
 
 ```text
-[16/40] 0016-course-view-php-id-4 course_view https://example.com/course/view.php?id=4
+[16/40] 0016-course-view-php-id-4 course_view 3.2s https://example.com/course/view.php?id=4
 ```
 
 ### Discovery crawl
@@ -390,6 +390,33 @@ moodle-sitemap crawl \
   --output ./output \
   --max-pages 200 \
   --headless true
+```
+
+#### Parallel crawl with multiple browser instances
+
+For large sites the `--workers` option runs multiple browser instances in parallel, each with its own authenticated session. This can reduce wall-clock time by 3–4× or more depending on available resources.
+
+```bash
+moodle-sitemap crawl \
+  --site-url https://example.com \
+  --username admin \
+  --password secret \
+  --output ./output \
+  --max-pages 1000 \
+  --headless true \
+  --workers 4
+```
+
+Each worker is a full browser instance, so memory is the main constraint. A value of 4–8 works well on a modern laptop; higher values may help on a well-resourced desktop or server. The default is `1` (sequential) for backwards compatibility.
+
+The `discover` command accepts `--workers` as well:
+
+```bash
+moodle-sitemap discover \
+  --config ./config.toml \
+  --max-pages 1000 \
+  --max-depth 4 \
+  --workers 4
 ```
 
 ### Compare runs
