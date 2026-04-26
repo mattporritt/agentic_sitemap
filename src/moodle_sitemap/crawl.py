@@ -11,6 +11,8 @@ turning visited pages into stable `PageRecord` artifacts and then deriving the
 manifest and workflow graph from those page records.
 """
 
+import queue
+import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -66,9 +68,11 @@ class CrawlConfig:
     headless: bool = True
     browser_engine: BrowserEngine = BrowserEngine.CHROMIUM
     settle_strategy: SettleStrategy = SettleStrategy.NETWORKIDLE
+    workers: int = 1
 
 
-ProgressCallback = Callable[[PageRecord, int, int], None]
+# Callback receives: page_record, current_count, max_pages, page_duration_seconds
+ProgressCallback = Callable[[PageRecord, int, int, float], None]
 
 MAX_DEFERRED_RETRY_ATTEMPTS = 1
 MAX_DEFERRED_RETRY_TARGETS = 100
@@ -159,133 +163,24 @@ def crawl_site(
     store = JsonStore(config.output_dir)
     store.prepare()
 
-    visit_index = CrawlVisitIndex()
-    queue: deque[tuple[str, str | None, int]] = deque([(start_url, None, 0)])
-    deferred_retry_state = DeferredRetryState()
-    visit_index.mark_queued(start_url)
-    page_records: list[PageRecord] = []
-    page_timings: list[PageTimingRecord] = []
-
-    with open_browser(headless=config.headless, engine=config.browser_engine) as session:
-        login_to_moodle(
-            page=session.page,
-            site_url=start_url,
-            username=config.username,
-            password=config.password,
+    crawl_loop_started = perf_counter()
+    if config.workers > 1:
+        page_records, page_timings = _run_parallel_loop(
+            config=config,
+            start_url=start_url,
+            origin=origin,
+            store=store,
+            progress_callback=progress_callback,
         )
-        recorder = NetworkRecorder(session.page)
-        recorder.attach()
-
-        try:
-            crawl_loop_started = perf_counter()
-            while (queue or deferred_retry_state.queue) and len(page_records) < config.max_pages:
-                if queue:
-                    target_url, referrer, depth = queue.popleft()
-                    visit_index.mark_dequeued(target_url)
-                else:
-                    target_url, referrer, depth = deferred_retry_state.queue.popleft()
-                if visit_index.should_skip_target(target_url):
-                    continue
-
-                page_started = perf_counter()
-                recorder.reset()
-                navigation_started = perf_counter()
-                try:
-                    response = session.page.goto(target_url, wait_until="domcontentloaded")
-                except (PlaywrightError, PlaywrightTimeoutError) as error:
-                    if is_download_navigation_error(error):
-                        visit_index.visited_targets.add(target_url)
-                        continue
-                    if deferred_retry_state.should_defer(target_url, error):
-                        deferred_retry_state.enqueue(target_url, referrer, depth)
-                        continue
-                    if is_retryable_navigation_error(error):
-                        visit_index.visited_targets.add(target_url)
-                        continue
-                    raise
-                navigation_duration_seconds = perf_counter() - navigation_started
-                settle_started = perf_counter()
-                apply_settle_strategy(session.page, config.settle_strategy)
-                settle_duration_seconds = perf_counter() - settle_started
-                load_duration_seconds = navigation_duration_seconds + settle_duration_seconds
-
-                final_url = normalize_url(session.page.url)
-                if not same_origin(final_url, origin):
-                    visit_index.visited_targets.add(target_url)
-                    continue
-                normalized_url = canonicalize_resolved_url(target_url, final_url)
-
-                if not visit_index.mark_visited(target_url, normalized_url):
-                    continue
-
-                extraction_started = perf_counter()
-                features = extract_page_features(session.page)
-                discovered_links = filter_discovered_links(
-                    extract_anchor_hrefs(session.page),
-                    base_url=normalized_url,
-                    origin=origin,
-                )
-
-                page_type = classify_page(normalized_url, features)
-                refined_task_summary = refine_task_summary_for_page_type(page_type, features.task_summary)
-                page_record = PageRecord(
-                    page_id=make_page_id(len(page_records) + 1, normalized_url),
-                    url=target_url,
-                    normalized_url=normalized_url,
-                    final_url=final_url,
-                    title=session.page.title(),
-                    page_type=page_type,
-                    referrer=referrer,
-                    http_status=response.status if response else None,
-                    body_id=features.body_id,
-                    body_classes=features.body_classes,
-                    breadcrumbs=features.breadcrumbs,
-                    affordances=features.affordances,
-                    task_summary=refined_task_summary,
-                    primary_page_intent=refined_task_summary.primary_page_intent,
-                    primary_actions=refined_task_summary.primary_actions,
-                    task_relevance_score=refined_task_summary.task_relevance_score,
-                    safety=summarize_page_safety(features.affordances),
-                    footer=extract_footer_info(session.page),
-                    discovered_links=discovered_links,
-                    network=list(recorder.events),
-                    crawl_depth=depth,
-                    load_duration_seconds=round(load_duration_seconds, 6),
-                )
-                extraction_duration_seconds = perf_counter() - extraction_started
-                write_started = perf_counter()
-                store.write_page(page_record)
-                write_duration_seconds = perf_counter() - write_started
-                page_records.append(page_record)
-                page_timings.append(
-                    PageTimingRecord(
-                        page_id=page_record.page_id,
-                        normalized_url=page_record.normalized_url,
-                        page_type=page_record.page_type.value,
-                        route_family=route_family(page_record.normalized_url),
-                        crawl_depth=depth,
-                        total_duration_seconds=round(perf_counter() - page_started, 6),
-                        navigation_duration_seconds=round(navigation_duration_seconds, 6),
-                        settle_duration_seconds=round(settle_duration_seconds, 6),
-                        extraction_duration_seconds=round(extraction_duration_seconds, 6),
-                        write_duration_seconds=round(write_duration_seconds, 6),
-                    )
-                )
-                if progress_callback:
-                    progress_callback(page_record, len(page_records), config.max_pages)
-
-                if config.max_depth is not None and depth >= config.max_depth:
-                    continue
-
-                for link in prioritize_discovered_links(discovered_links):
-                    if len(visit_index.visited_normalized) + len(queue) >= config.max_pages:
-                        break
-                    if not visit_index.mark_queued(link):
-                        continue
-                    queue.append((link, final_url, depth + 1))
-        finally:
-            recorder.detach()
-        crawl_loop_duration_seconds = perf_counter() - crawl_loop_started
+    else:
+        page_records, page_timings = _run_sequential_loop(
+            config=config,
+            start_url=start_url,
+            origin=origin,
+            store=store,
+            progress_callback=progress_callback,
+        )
+    crawl_loop_duration_seconds = perf_counter() - crawl_loop_started
 
     crawl_finished_at = datetime.now(timezone.utc)
     workflow_started = perf_counter()
@@ -361,15 +256,369 @@ def crawl_site(
     return manifest
 
 
-def format_progress_line(page: PageRecord, *, current_count: int, max_pages: int) -> str:
+def format_progress_line(
+    page: PageRecord, *, current_count: int, max_pages: int, duration_seconds: float
+) -> str:
     """Render a short CLI progress line for a visited page."""
 
     return (
         f"[{current_count}/{max_pages}] "
         f"{page.page_id} "
         f"{page.page_type.value} "
+        f"{duration_seconds:.1f}s "
         f"{page.normalized_url}"
     )
+
+
+def _run_sequential_loop(
+    *,
+    config: CrawlConfig,
+    start_url: str,
+    origin: str,
+    store: JsonStore,
+    progress_callback: ProgressCallback | None,
+) -> tuple[list[PageRecord], list[PageTimingRecord]]:
+    """Single-browser sequential crawl loop."""
+
+    visit_index = CrawlVisitIndex()
+    bfs_queue: deque[tuple[str, str | None, int]] = deque([(start_url, None, 0)])
+    deferred_retry_state = DeferredRetryState()
+    visit_index.mark_queued(start_url)
+    page_records: list[PageRecord] = []
+    page_timings: list[PageTimingRecord] = []
+
+    with open_browser(headless=config.headless, engine=config.browser_engine) as session:
+        login_to_moodle(
+            page=session.page,
+            site_url=start_url,
+            username=config.username,
+            password=config.password,
+        )
+        recorder = NetworkRecorder(session.page)
+        recorder.attach()
+
+        try:
+            while (bfs_queue or deferred_retry_state.queue) and len(page_records) < config.max_pages:
+                if bfs_queue:
+                    target_url, referrer, depth = bfs_queue.popleft()
+                    visit_index.mark_dequeued(target_url)
+                else:
+                    target_url, referrer, depth = deferred_retry_state.queue.popleft()
+                if visit_index.should_skip_target(target_url):
+                    continue
+
+                page_started = perf_counter()
+                recorder.reset()
+                navigation_started = perf_counter()
+                try:
+                    response = session.page.goto(target_url, wait_until="domcontentloaded")
+                except (PlaywrightError, PlaywrightTimeoutError) as error:
+                    if is_download_navigation_error(error):
+                        visit_index.visited_targets.add(target_url)
+                        continue
+                    if deferred_retry_state.should_defer(target_url, error):
+                        deferred_retry_state.enqueue(target_url, referrer, depth)
+                        continue
+                    if is_retryable_navigation_error(error):
+                        visit_index.visited_targets.add(target_url)
+                        continue
+                    raise
+                navigation_duration_seconds = perf_counter() - navigation_started
+                settle_started = perf_counter()
+                apply_settle_strategy(session.page, config.settle_strategy)
+                settle_duration_seconds = perf_counter() - settle_started
+                load_duration_seconds = navigation_duration_seconds + settle_duration_seconds
+
+                final_url = normalize_url(session.page.url)
+                if not same_origin(final_url, origin):
+                    visit_index.visited_targets.add(target_url)
+                    continue
+                normalized_url = canonicalize_resolved_url(target_url, final_url)
+
+                if not visit_index.mark_visited(target_url, normalized_url):
+                    continue
+
+                extraction_started = perf_counter()
+                features = extract_page_features(session.page)
+                discovered_links = filter_discovered_links(
+                    extract_anchor_hrefs(session.page),
+                    base_url=normalized_url,
+                    origin=origin,
+                )
+
+                page_type = classify_page(normalized_url, features)
+                refined_task_summary = refine_task_summary_for_page_type(page_type, features.task_summary)
+                page_record = PageRecord(
+                    page_id=make_page_id(len(page_records) + 1, normalized_url),
+                    url=target_url,
+                    normalized_url=normalized_url,
+                    final_url=final_url,
+                    title=session.page.title(),
+                    page_type=page_type,
+                    referrer=referrer,
+                    http_status=response.status if response else None,
+                    body_id=features.body_id,
+                    body_classes=features.body_classes,
+                    breadcrumbs=features.breadcrumbs,
+                    affordances=features.affordances,
+                    task_summary=refined_task_summary,
+                    primary_page_intent=refined_task_summary.primary_page_intent,
+                    primary_actions=refined_task_summary.primary_actions,
+                    task_relevance_score=refined_task_summary.task_relevance_score,
+                    safety=summarize_page_safety(features.affordances),
+                    footer=extract_footer_info(session.page),
+                    discovered_links=discovered_links,
+                    network=list(recorder.events),
+                    crawl_depth=depth,
+                    load_duration_seconds=round(load_duration_seconds, 6),
+                )
+                extraction_duration_seconds = perf_counter() - extraction_started
+                total_duration_seconds = round(perf_counter() - page_started, 6)
+                write_started = perf_counter()
+                store.write_page(page_record)
+                write_duration_seconds = perf_counter() - write_started
+                page_records.append(page_record)
+                page_timings.append(
+                    PageTimingRecord(
+                        page_id=page_record.page_id,
+                        normalized_url=page_record.normalized_url,
+                        page_type=page_record.page_type.value,
+                        route_family=route_family(page_record.normalized_url),
+                        crawl_depth=depth,
+                        total_duration_seconds=total_duration_seconds,
+                        navigation_duration_seconds=round(navigation_duration_seconds, 6),
+                        settle_duration_seconds=round(settle_duration_seconds, 6),
+                        extraction_duration_seconds=round(extraction_duration_seconds, 6),
+                        write_duration_seconds=round(write_duration_seconds, 6),
+                    )
+                )
+                if progress_callback:
+                    progress_callback(page_record, len(page_records), config.max_pages, total_duration_seconds)
+
+                if config.max_depth is not None and depth >= config.max_depth:
+                    continue
+
+                for link in prioritize_discovered_links(discovered_links):
+                    if len(visit_index.visited_normalized) + len(bfs_queue) >= config.max_pages:
+                        break
+                    if not visit_index.mark_queued(link):
+                        continue
+                    bfs_queue.append((link, final_url, depth + 1))
+        finally:
+            recorder.detach()
+
+    return page_records, page_timings
+
+
+def _run_parallel_loop(
+    *,
+    config: CrawlConfig,
+    start_url: str,
+    origin: str,
+    store: JsonStore,
+    progress_callback: ProgressCallback | None,
+) -> tuple[list[PageRecord], list[PageTimingRecord]]:
+    """Multi-browser parallel crawl loop.
+
+    Each worker owns one Playwright instance, browser, and page. Shared state
+    (visit index, result lists, deferred retries) is protected by a single lock.
+    Work items are distributed via a thread-safe queue.Queue; queue.join() is
+    used to detect exhaustion so workers do not need an active-count heuristic.
+    """
+
+    shared_lock = threading.Lock()
+    visit_index = CrawlVisitIndex()
+    page_records: list[PageRecord] = []
+    page_timings: list[PageTimingRecord] = []
+    deferred_retry_state = DeferredRetryState()
+    stop_event = threading.Event()
+    worker_errors: list[Exception] = []
+
+    work_queue: queue.Queue[tuple[str, str | None, int] | None] = queue.Queue()
+    work_queue.put((start_url, None, 0))
+    visit_index.mark_queued(start_url)
+
+    def worker() -> None:
+        try:
+            with open_browser(headless=config.headless, engine=config.browser_engine) as session:
+                login_to_moodle(
+                    page=session.page,
+                    site_url=start_url,
+                    username=config.username,
+                    password=config.password,
+                )
+                recorder = NetworkRecorder(session.page)
+                recorder.attach()
+                try:
+                    while True:
+                        item = work_queue.get()
+                        if item is None:
+                            work_queue.task_done()
+                            break
+
+                        target_url, referrer, depth = item
+                        try:
+                            if stop_event.is_set():
+                                continue
+
+                            with shared_lock:
+                                if visit_index.should_skip_target(target_url):
+                                    continue
+
+                            page_started = perf_counter()
+                            recorder.reset()
+                            navigation_started = perf_counter()
+                            try:
+                                response = session.page.goto(target_url, wait_until="domcontentloaded")
+                            except (PlaywrightError, PlaywrightTimeoutError) as error:
+                                with shared_lock:
+                                    if is_download_navigation_error(error):
+                                        visit_index.visited_targets.add(target_url)
+                                    elif deferred_retry_state.should_defer(target_url, error):
+                                        deferred_retry_state.enqueue(target_url, referrer, depth)
+                                    elif is_retryable_navigation_error(error):
+                                        visit_index.visited_targets.add(target_url)
+                                    else:
+                                        stop_event.set()
+                                        if not worker_errors:
+                                            worker_errors.append(error)
+                                continue
+
+                            navigation_duration_seconds = perf_counter() - navigation_started
+                            settle_started = perf_counter()
+                            apply_settle_strategy(session.page, config.settle_strategy)
+                            settle_duration_seconds = perf_counter() - settle_started
+                            load_duration_seconds = navigation_duration_seconds + settle_duration_seconds
+
+                            final_url = normalize_url(session.page.url)
+                            if not same_origin(final_url, origin):
+                                with shared_lock:
+                                    visit_index.visited_targets.add(target_url)
+                                continue
+                            normalized_url = canonicalize_resolved_url(target_url, final_url)
+
+                            with shared_lock:
+                                if not visit_index.mark_visited(target_url, normalized_url):
+                                    continue
+
+                            extraction_started = perf_counter()
+                            features = extract_page_features(session.page)
+                            discovered_links = filter_discovered_links(
+                                extract_anchor_hrefs(session.page),
+                                base_url=normalized_url,
+                                origin=origin,
+                            )
+                            page_type = classify_page(normalized_url, features)
+                            refined_task_summary = refine_task_summary_for_page_type(page_type, features.task_summary)
+                            extraction_duration_seconds = perf_counter() - extraction_started
+
+                            footer = extract_footer_info(session.page)
+                            title = session.page.title()
+                            http_status = response.status if response else None
+                            network_events = list(recorder.events)
+                            total_duration_seconds = round(perf_counter() - page_started, 6)
+
+                            write_started = perf_counter()
+                            with shared_lock:
+                                page_num = len(page_records) + 1
+                                page_record = PageRecord(
+                                    page_id=make_page_id(page_num, normalized_url),
+                                    url=target_url,
+                                    normalized_url=normalized_url,
+                                    final_url=final_url,
+                                    title=title,
+                                    page_type=page_type,
+                                    referrer=referrer,
+                                    http_status=http_status,
+                                    body_id=features.body_id,
+                                    body_classes=features.body_classes,
+                                    breadcrumbs=features.breadcrumbs,
+                                    affordances=features.affordances,
+                                    task_summary=refined_task_summary,
+                                    primary_page_intent=refined_task_summary.primary_page_intent,
+                                    primary_actions=refined_task_summary.primary_actions,
+                                    task_relevance_score=refined_task_summary.task_relevance_score,
+                                    safety=summarize_page_safety(features.affordances),
+                                    footer=footer,
+                                    discovered_links=discovered_links,
+                                    network=network_events,
+                                    crawl_depth=depth,
+                                    load_duration_seconds=round(load_duration_seconds, 6),
+                                )
+                                store.write_page(page_record)
+                                write_duration_seconds = round(perf_counter() - write_started, 6)
+                                page_records.append(page_record)
+                                page_timings.append(
+                                    PageTimingRecord(
+                                        page_id=page_record.page_id,
+                                        normalized_url=page_record.normalized_url,
+                                        page_type=page_record.page_type.value,
+                                        route_family=route_family(page_record.normalized_url),
+                                        crawl_depth=depth,
+                                        total_duration_seconds=total_duration_seconds,
+                                        navigation_duration_seconds=round(navigation_duration_seconds, 6),
+                                        settle_duration_seconds=round(settle_duration_seconds, 6),
+                                        extraction_duration_seconds=round(extraction_duration_seconds, 6),
+                                        write_duration_seconds=write_duration_seconds,
+                                    )
+                                )
+                                current_count = len(page_records)
+
+                                if current_count >= config.max_pages:
+                                    stop_event.set()
+                                elif config.max_depth is None or depth < config.max_depth:
+                                    for link in prioritize_discovered_links(discovered_links):
+                                        if current_count + work_queue.qsize() >= config.max_pages:
+                                            break
+                                        if visit_index.mark_queued(link):
+                                            work_queue.put((link, final_url, depth + 1))
+
+                            if progress_callback:
+                                progress_callback(page_record, current_count, config.max_pages, total_duration_seconds)
+
+                        finally:
+                            work_queue.task_done()
+                finally:
+                    recorder.detach()
+        except Exception as exc:
+            with shared_lock:
+                if not worker_errors:
+                    worker_errors.append(exc)
+            stop_event.set()
+            # Drain remaining items so queue.join() can complete
+            while True:
+                try:
+                    work_queue.get_nowait()
+                    work_queue.task_done()
+                except queue.Empty:
+                    break
+
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(config.workers)]
+    for t in threads:
+        t.start()
+
+    # Phase 1: main crawl — wait until all queued work is done
+    work_queue.join()
+
+    # Phase 2: deferred retries — re-enqueue and wait again
+    with shared_lock:
+        retry_targets = list(deferred_retry_state.queue)
+        deferred_retry_state.queue.clear()
+    if retry_targets and not stop_event.is_set():
+        for item in retry_targets:
+            work_queue.put(item)
+        work_queue.join()
+
+    # Terminate workers
+    for _ in threads:
+        work_queue.put(None)
+    for t in threads:
+        t.join()
+
+    if worker_errors:
+        raise worker_errors[0]
+
+    return page_records, page_timings
 
 
 def is_download_navigation_error(error: Exception) -> bool:

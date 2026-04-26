@@ -35,7 +35,7 @@ def test_crawl_visit_index_allows_distinct_normalized_urls() -> None:
     assert index.mark_queued("https://example.com/admin/search.php") is True
 
 
-def test_format_progress_line_includes_count_page_id_type_and_url() -> None:
+def test_format_progress_line_includes_count_page_id_type_duration_and_url() -> None:
     page = PageRecord(
         page_id="0016-course-view-php-id-4",
         url="https://example.com/course/view.php?id=4",
@@ -49,11 +49,12 @@ def test_format_progress_line_includes_count_page_id_type_and_url() -> None:
         network=[],
     )
 
-    line = format_progress_line(page, current_count=16, max_pages=40)
+    line = format_progress_line(page, current_count=16, max_pages=40, duration_seconds=3.2)
 
     assert line == (
         "[16/40] 0016-course-view-php-id-4 "
         "course_view "
+        "3.2s "
         "https://example.com/course/view.php?id=4"
     )
 

@@ -40,8 +40,8 @@ def main() -> None:
     """CLI entrypoint."""
 
 
-def emit_progress(page, current_count: int, max_pages: int) -> None:
-    typer.echo(format_progress_line(page, current_count=current_count, max_pages=max_pages))
+def emit_progress(page, current_count: int, max_pages: int, duration_seconds: float) -> None:
+    typer.echo(format_progress_line(page, current_count=current_count, max_pages=max_pages, duration_seconds=duration_seconds))
 
 
 @app.command()
@@ -57,6 +57,7 @@ def crawl(
         SettleStrategy.NETWORKIDLE,
         help="Post-navigation settle strategy.",
     ),
+    workers: int = typer.Option(1, min=1, help="Number of parallel browser instances. Use 1 for sequential crawl."),
 ) -> None:
     manifest = crawl_site(
         CrawlConfig(
@@ -68,6 +69,7 @@ def crawl(
             max_pages=max_pages,
             headless=parse_bool(headless),
             settle_strategy=settle_strategy,
+            workers=workers,
         ),
         progress_callback=emit_progress,
     )
@@ -135,6 +137,7 @@ def discover(
         SettleStrategy.ADAPTIVE,
         help="Post-navigation settle strategy. Discovery defaults to adaptive; use networkidle for conservative reference runs.",
     ),
+    workers: int = typer.Option(1, min=1, help="Number of parallel browser instances. Use 1 for sequential crawl."),
 ) -> None:
     try:
         result = run_discovery(
@@ -144,6 +147,7 @@ def discover(
             settle_strategy=settle_strategy,
             base_dir=output_root,
             progress_callback=emit_progress,
+            workers=workers,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

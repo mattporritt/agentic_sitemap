@@ -60,6 +60,7 @@ def run_discovery(
     base_dir: str | Path = "discovery-runs",
     baseline_manifest_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
+    workers: int = 1,
 ) -> DiscoveryRunResult:
     """Run a broader bounded crawl and write discovery summary artifacts."""
 
@@ -78,6 +79,7 @@ def run_discovery(
             headless=config.headless,
             browser_engine=config.browser_engine,
             settle_strategy=selected_settle_strategy,
+            workers=workers,
         ),
         progress_callback=progress_callback,
     )
