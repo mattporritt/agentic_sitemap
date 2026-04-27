@@ -37,7 +37,7 @@ def parse_bool(value: str) -> bool:
 
 @app.callback()
 def main() -> None:
-    """CLI entrypoint."""
+    """Moodle-aware authenticated sitemap crawler."""
 
 
 def emit_progress(page, current_count: int, max_pages: int, duration_seconds: float) -> None:
@@ -59,6 +59,7 @@ def crawl(
     ),
     workers: int = typer.Option(1, min=1, help="Number of parallel browser instances. Use 1 for sequential crawl."),
 ) -> None:
+    """Low-level crawl primitive. Pass credentials and output directory directly; use discover for normal operation."""
     manifest = crawl_site(
         CrawlConfig(
             site_url=site_url,
@@ -81,6 +82,7 @@ def smoke(
     config: Path = typer.Option(..., help="Path to the smoke test TOML config file."),
     output: Path = typer.Option(Path("output"), help="Output directory for the smoke test artifact."),
 ) -> None:
+    """Verify login, browser startup, and basic post-login capture. Run this before a full crawl."""
     try:
         result = run_smoke_test(config_path=config, output_dir=output)
     except ValueError as exc:
@@ -105,6 +107,7 @@ def verify(
         help="Root directory for timestamped verification runs.",
     ),
 ) -> None:
+    """Run a smoke test then a small bounded crawl and save a timestamped regression snapshot."""
     try:
         result = run_verification(
             config_path=config,
@@ -139,6 +142,7 @@ def discover(
     ),
     workers: int = typer.Option(1, min=1, help="Number of parallel browser instances. Use 1 for sequential crawl."),
 ) -> None:
+    """Full site-intelligence crawl driven by config file. Writes a timestamped run to discovery-runs/."""
     try:
         result = run_discovery(
             config_path=config,
@@ -183,6 +187,7 @@ def compare_settle_command(
         help="One or more settle strategies to run and compare.",
     ),
 ) -> None:
+    """Run discovery with multiple settle strategies and produce a side-by-side comparison report."""
     try:
         result = compare_settle_strategies(
             config_path=config,
@@ -213,6 +218,7 @@ def compare_runs_command(
         help="Root directory for timestamped run comparisons.",
     ),
 ) -> None:
+    """Diff two saved discovery runs and report added, removed, and changed pages."""
     try:
         result = compare_runs(left_run_dir=left, right_run_dir=right, base_dir=output_root)
     except ValueError as exc:
@@ -239,6 +245,7 @@ def validate_tasks_command(
         help="Emit the stable runtime-facing JSON contract envelope.",
     ),
 ) -> None:
+    """Check whether saved sitemap artifacts can support a set of representative tasks, without re-crawling."""
     try:
         result = validate_tasks_for_run(run_dir=run, tasks_path=tasks, base_dir=output_root)
     except ValueError as exc:
